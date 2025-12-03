@@ -6,17 +6,20 @@ WetNet helps Aigües de Barcelona (Barcelona Water Company) predict anomalous wa
 
 ## Setup
 
-### 1. Clone the repository
+### 1. Install uv
+
+Our project uses uv to manage dependencies in a reproducible way. You can install it by running the following command:
+Visit [Installing uv](https://docs.astral.sh/uv/getting-started/installation/) documentation for installation instructions.
+
+> [!TIP]
+> You can skip the rest of the setup if you just want to run the scripts and see the project in action! Run `uvx https://github.com/ZachParent/wet-net.git --help` to see the available commands in the CLI.
+
+### 2. Clone the repository
 
 ```bash
 git clone https://github.com/ZachParent/wet-net.git
 cd wet-net
 ```
-
-### 2. Install uv
-
-Our project uses uv to manage dependencies in a reproducible way. You can install it by running the following command:
-Visit [Installing uv](https://docs.astral.sh/uv/getting-started/installation/) documentation for installation instructions.
 
 ### 3. Install the project dependencies
 
