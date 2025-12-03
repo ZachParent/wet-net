@@ -4,6 +4,7 @@ import typer
 
 app = typer.Typer()
 
+
 @app.command()
 def pre_process(dry_run: bool = typer.Option(False, help="Dry run the pre-processing.")):
     """
@@ -15,6 +16,7 @@ def pre_process(dry_run: bool = typer.Option(False, help="Dry run the pre-proces
             for _ in progress:
                 time.sleep(0.01)
     typer.echo("Pre-processing completed.")
+
 
 if __name__ == "__main__":
     app()
