@@ -25,6 +25,8 @@ dev = [
 
 [project.scripts]
 preprocess = "wet_net.scripts.pre_process:app"
+train = "wet_net.scripts.train:app"
+evaluate = "wet_net.scripts.evaluate:app"
 
 [build-system]
 requires = ["uv_build>=0.9.6,<0.10.0"]
