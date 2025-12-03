@@ -4,4 +4,48 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.3",
+    "pandas>=2.3.2",
+    "plotly>=6.4.0",
+    "pyarrow>=22.0.0",
+    "requests>=2.32.5",
+    "typer>=0.19.2",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.30.1",
+    "nbformat>=5.10.4",
+    "pre-commit>=4.4.0",
+    "ruff>=0.14.4",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.6,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "F", # pyflakes
+    "I", # isort
+    "B", # flake8-bugbear
+    "W", # pycodestyle warnings
+    "S", # flake8-bandit
+    "UP", # pyupgrade
+    "SIM", # flake8-simplify
+    "ASYNC", # flake8-async
+    "PD", # pandas-vet
+]
+ignore = [
+    "S311" # Ignore insecure random number generator
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/test_*.py" = ["S101"]  # Allow assert statements in test files
