@@ -31,9 +31,9 @@ uv sync --locked
 The easiest way to verify that the project is working is to run the scripts. These command line interfaces include help documentation.
 
 ```bash
-uv run preprocess --help
-uv run train --help
-uv run evaluate --help
+uv run wet-net pre-process --help
+uv run wet-net train --help
+uv run wet-net evaluate --help
 ```
 
 The code for the scripts can be found in the [src/wet_net/scripts](src/wet_net/scripts) directory.
