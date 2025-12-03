@@ -1,0 +1,33 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.Python
+
+# Caches and logs
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# IDEs/editors
+.vscode/
+.idea/
+
+# zip files
+*.zip
+
+*.parquet
