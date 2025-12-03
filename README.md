@@ -2,6 +2,8 @@
 
 WetNet helps Aigües de Barcelona (Barcelona Water Company) predict anomalous water consumption, using machine learning.
 
+![WetNet logo](assets/wet-net-logo.jpeg)
+
 ## Setup
 
 ### 1. Clone the repository
