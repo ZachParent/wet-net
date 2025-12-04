@@ -2,7 +2,7 @@
 
 WetNet helps Aigües de Barcelona (Barcelona Water Company) predict anomalous water consumption, using machine learning.
 
-![WetNet logo](assets/wet-net-logo.jpeg)
+![WetNet logo](https://github.com/ZachParent/wet-net/raw/main/assets/wet-net-logo.jpeg)
 
 ## Setup
 
@@ -72,10 +72,4 @@ The [03_evaluate.ipynb](notebooks/03_evaluate.ipynb) notebook shows the process 
 
 We welcome contributions to the project. Please feel free to submit an issue or pull request.
 
-### Pre-commit hooks
-
-We use pre-commit hooks to run checks on the code before it is committed. You can install the pre-commit hooks by running the following command in the root of the repository:
-
-```bash
-uv run pre-commit install
-```
+For more information on contributing, including how to set up pre-commit hooks and how to cut a new release, see [CONTRIBUTING.md](CONTRIBUTING.md).
