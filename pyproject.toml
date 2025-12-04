@@ -2,8 +2,19 @@
 name = "wet-net"
 version = "0.2.1"
 description = "WetNet helps Aigües de Barcelona (Barcelona Water Company) predict anomalous water consumption, using machine learning."
+authors = [
+    { name = "Antonio Lobo Santos", email = "alobosantos10@gmail.com" },
+    { name = "Zachary Parent", email = "zachparent@duck.com" },
+    { name = "Bruno Sánchez Gómez", email = "brunosangom@gmail.com" },
+]
 readme = "README.md"
 requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
 dependencies = [
     "matplotlib>=3.10.7",
     "numpy>=2.3.3",
@@ -13,6 +24,9 @@ dependencies = [
     "requests>=2.32.5",
     "typer>=0.19.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ZachParent/wet-net"
 
 [dependency-groups]
 dev = [
