@@ -1,6 +1,6 @@
 [project]
 name = "wet-net"
-version = "0.2.2"
+version = "0.2.3"
 description = "WetNet helps Aigües de Barcelona (Barcelona Water Company) predict anomalous water consumption, using machine learning."
 authors = [
     { name = "Antonio Lobo Santos", email = "alobosantos10@gmail.com" },
