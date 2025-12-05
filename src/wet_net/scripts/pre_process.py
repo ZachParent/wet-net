@@ -1,21 +1,31 @@
-import time
+from pathlib import Path
 
 import typer
+from torchvision import datasets, transforms
 
 app = typer.Typer()
 
 
 @app.command()
-def pre_process(dry_run: bool = typer.Option(False, help="Dry run the pre-processing.")):
+def pre_process(
+    data_dir: str = typer.Option("./data", help="Directory to save the dataset"),
+    dry_run: bool = typer.Option(False, help="Dry run the pre-processing."),
+):
     """
-    Pre-process data (dummy implementation).
+    Download and preprocess MNIST dataset.
     """
-    typer.echo("Pre-processing started...")
+    data_path = Path(data_dir)
+    data_path.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"Downloading MNIST dataset to {data_path}...")
+
     if not dry_run:
-        with typer.progressbar(range(100), label="Pre-processing") as progress:
-            for _ in progress:
-                time.sleep(0.01)
-    typer.echo("Pre-processing completed.")
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+
+        datasets.MNIST(root=str(data_path), train=True, download=True, transform=transform)
+        datasets.MNIST(root=str(data_path), train=False, download=True, transform=transform)
+
+        typer.echo(f"MNIST dataset downloaded successfully to {data_path}")
 
 
 if __name__ == "__main__":
