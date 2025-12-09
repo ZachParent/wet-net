@@ -32,4 +32,7 @@ dist/
 
 *.parquet
 
+# trained models
+*.pt
+
 results/*.csv
