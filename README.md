@@ -2,6 +2,10 @@
 
 WetNet helps Aigües de Barcelona (Barcelona Water Company) predict anomalous water consumption, using machine learning.
 
+![PyPI - Version](https://img.shields.io/pypi/v/wet-net)
+![PyPI - License](https://img.shields.io/pypi/l/wet-net)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/wet-net)
+
 ![WetNet logo](https://github.com/ZachParent/wet-net/raw/main/assets/wet-net-logo.jpeg)
 
 ## Setup
@@ -11,7 +15,7 @@ WetNet helps Aigües de Barcelona (Barcelona Water Company) predict anomalous wa
 Our project uses uv to manage dependencies in a reproducible way. See [Installing uv](https://docs.astral.sh/uv/getting-started/installation/) documentation for installation instructions.
 
 > [!TIP]
-> You can skip the rest of the setup if you just want to run the scripts and see the project in action! Run `uvx https://github.com/ZachParent/wet-net.git --help` to see the available commands in the CLI.
+> You can skip the rest of the setup if you just want to run the scripts and see the project in action! Run `uvx wet-net --help` to see the available commands in the CLI. This will install the latest release of the project from PyPI in an isolated virtual environment.
 
 ### 2. Clone the repository
 
@@ -26,19 +30,68 @@ cd wet-net
 uv sync --locked
 ```
 
+> Torch install hint (if not pulled via lockfile):
+> - CPU-only: `pip install torch torchvision torchaudio`
+> - CUDA 12.8 (recommended for GPUs): `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128`
+
+### HuggingFace token (only needed if you plan to push trained models)
+- Copy `.env.example` to `.env` and set `HUGGINGFACE_TOKEN=<your_token>`. If you already placed your token in `.env`, nothing else to do.
+- One-off export: `export HUGGINGFACE_TOKEN=hf_xxx`.
+- CLI alternative: `huggingface-cli login` (same token).
+
+End-to-end train (full data) + push example:
+```bash
+# assuming data is preprocessed and CUDA available
+uv run wet-net train --seq-len 96 --optimize-for recall
+uv run python - <<'PY'
+import os, torch
+from huggingface_hub import HfApi, HfFolder
+from wet_net.paths import RESULTS_DIR
+run_dir = RESULTS_DIR / "wetnet" / "seq96_recall"
+repo = os.environ.get("HF_REPO", "your-username/wetnet-seq96-recall")
+api = HfApi()
+api.create_repo(repo, exist_ok=True)
+api.upload_file(path_or_fileobj=run_dir / "wetnet.pt", path_in_repo="wetnet.pt", repo_id=repo)
+api.upload_file(path_or_fileobj=run_dir / "vib.pt", path_in_repo="vib.pt", repo_id=repo)
+api.upload_file(path_or_fileobj=run_dir / "config.json", path_in_repo="config.json", repo_id=repo)
+PY
+```
+Make sure `HUGGINGFACE_TOKEN` is set in your environment before running the upload step.
+
 ## Usage
 
 ### Run the scripts
 
-The easiest way to verify that the project is working is to run the scripts. These command line interfaces include help documentation.
+The CLI entry points are unchanged, now targeting the WetNet tri-task pipeline (no grid search; cached best configs per sequence length):
 
 ```bash
-uv run wet-net pre-process --help
-uv run wet-net train --help
-uv run wet-net evaluate --help
+# Generate data (real: pass your private URL; mock: bundled synthetic)
+# Accepts a parquet URL or the official challenge zip URL
+uv run wet-net pre-process --data-url https://<your-parquet-or-zip-url>   # real
+uv run wet-net pre-process --mock                                         # synthetic
+
+# Train (picks the best recall/false_alarm config for that seq_len)
+uv run wet-net train --seq-len 192 --optimize-for recall
+uv run wet-net train --seq-len 192 --optimize-for false_alarm --mock
+
+# Optional: push trained artifacts to Hugging Face
+uv run wet-net train --seq-len 96 --optimize-for recall --push-to-hub --hub-model-name WetNet/wet-net
+
+# Optional: override hyperparameters by editing src/wet_net/config/best_configs.yaml
+# (any fields you change there are picked up automatically at runtime)
+
+# Evaluate saved checkpoints (no retraining)
+uv run wet-net evaluate --seq-len 192 --optimize-for recall
 ```
 
 The code for the scripts can be found in the [src/wet_net/scripts](src/wet_net/scripts) directory.
+
+### Tri-Task WetNet
+
+- Model: Cyclic-UniTS backbone + 4 heads (reconstruction, 24h forecast, short/long anomaly logits), class `wet_net.models.wetnet.WetNet`.
+- Cached best configs: one per sequence length (96, 192, 360, 720, 1440) for two objectives (recall, false_alarm). Each stores schedule variant, PCGrad flag, transformer width/depth/heads/dropout, and the fusion threshold to report.
+- VIB fusion: lightweight dual-VIB probe is trained after the main model to provide uncertainty mass for Dempster–Shafer fusion.
+- Data: preprocessing lives in `wet_net.data.preprocess`. For real runs supply the parquet URL via `--data-url` or `WETNET_DATA_URL`. A mock parquet is shipped so the full pipeline can run without private data.
 
 ### Notebooks
 

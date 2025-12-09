@@ -1,0 +1,83 @@
+recall:
+  "96":
+    d_model: 160
+    n_layers: 4
+    n_heads: 8
+    dropout: 0.05
+    schedule_variant: extended
+    pcgrad: true
+    threshold: 0.4
+  "192":
+    d_model: 160
+    n_layers: 4
+    n_heads: 8
+    dropout: 0.05
+    schedule_variant: extended
+    pcgrad: false
+    threshold: 0.4
+  "360":
+    d_model: 160
+    n_layers: 4
+    n_heads: 8
+    dropout: 0.05
+    schedule_variant: extended
+    pcgrad: true
+    threshold: 0.4
+  "720":
+    d_model: 160
+    n_layers: 4
+    n_heads: 8
+    dropout: 0.05
+    schedule_variant: extended
+    pcgrad: false
+    threshold: 0.4
+  "1440":
+    d_model: 96
+    n_layers: 3
+    n_heads: 4
+    dropout: 0.2
+    schedule_variant: baseline
+    pcgrad: false
+    threshold: 0.4
+
+false_alarm:
+  "96":
+    d_model: 160
+    n_layers: 4
+    n_heads: 8
+    dropout: 0.05
+    schedule_variant: extended
+    pcgrad: false
+    threshold: 0.7
+  "192":
+    d_model: 160
+    n_layers: 4
+    n_heads: 8
+    dropout: 0.05
+    schedule_variant: extended
+    pcgrad: true
+    threshold: 0.7
+  "360":
+    d_model: 160
+    n_layers: 4
+    n_heads: 8
+    dropout: 0.05
+    schedule_variant: extended
+    pcgrad: true
+    threshold: 0.7
+  "720":
+    d_model: 96
+    n_layers: 3
+    n_heads: 4
+    dropout: 0.2
+    schedule_variant: extended
+    pcgrad: true
+    threshold: 0.7
+  "1440":
+    d_model: 96
+    n_layers: 3
+    n_heads: 4
+    dropout: 0.2
+    schedule_variant: baseline
+    pcgrad: false
+    threshold: 0.7

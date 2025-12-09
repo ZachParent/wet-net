@@ -4,7 +4,7 @@ __pycache__/
 
 # Virtual environments
 .venv/
-
+.env
 # Build / packaging
 build/
 dist/
@@ -31,3 +31,5 @@ dist/
 *.zip
 
 *.parquet
+
+results/*.csv

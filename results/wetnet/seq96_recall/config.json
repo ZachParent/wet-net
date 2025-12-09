@@ -1,0 +1,30 @@
+{
+  "optimize_for": "recall",
+  "seq_len": 96,
+  "model_config": {
+    "d_model": 160,
+    "n_layers": 4,
+    "n_heads": 8,
+    "dropout": 0.05,
+    "schedule_variant": "extended",
+    "pcgrad": true,
+    "threshold": 0.4
+  },
+  "vib_config": {
+    "seq_len": 96,
+    "d_model": 128,
+    "d_content": 64,
+    "d_style": 24,
+    "nhead": 4,
+    "layers": 3,
+    "epochs": 20,
+    "steps_per_epoch": 40,
+    "cls_weight": 2.0,
+    "beta": 0.001
+  },
+  "threshold_summary": {
+    "threshold": 0.4,
+    "recall": 0.11016949152542373,
+    "false_alarm": 0.0
+  }
+}
