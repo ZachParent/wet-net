@@ -21,8 +21,9 @@ dependencies = [
     "numpy>=2.3.3",
     "pandas>=2.3.2",
     "plotly>=6.4.0",
+    "torch>=2.9.1",
     "pyarrow>=22.0.0",
-    "requests>=2.32.5",
+    "requests>=2.28.1",
     "safetensors>=0.7.0",
     "typer>=0.19.2",
     "umap-learn>=0.5.7",
@@ -43,6 +44,38 @@ dev = [
     "ruff>=0.14.4",
     "streamlit>=1.50.0",
 ]
+
+[project.optional-dependencies]
+cpu = [
+  "torch",
+]
+gpu = [
+  "torch",
+]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "gpu" }
+    ]
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "torch-cpu", extra = "cpu" },
+  { index = "torch-gpu", extra = "gpu" },
+]
+
+[[tool.uv.index]]
+name = "torch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-gpu"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [project.scripts]
 wet-net = "wet_net.scripts.wet_net:app"
