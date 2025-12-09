@@ -35,14 +35,23 @@ uv sync --locked
 > - CUDA 12.8 (recommended for GPUs): `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128`
 
 ### HuggingFace token (only needed if you plan to push trained models)
-- Copy `.env.example` to `.env` and set `HUGGINGFACE_TOKEN=<your_token>`. If you already placed your token in `.env`, nothing else to do.
-- One-off export: `export HUGGINGFACE_TOKEN=hf_xxx`.
-- CLI alternative: `huggingface-cli login` (same token).
+- Copy `.env.example` to `.env` and set `HF_TOKEN=<your_token>`.
+- Load and export: `source .env && uv run wet-net <command>`.
+- Alternative: `huggingface-cli login` (persists token).
+
+To verify your HuggingFace token and check repository access permissions:
+```bash
+# Load .env and check token validity
+source .env && uv run wet-net hf-check WetNet/wet-net
+
+# Use a custom environment variable
+uv run wet-net hf-check WetNet/wet-net --env-var MY_HF_TOKEN
+```
 
 End-to-end train (full data) + push example:
 ```bash
 # assuming data is preprocessed and CUDA available
-uv run wet-net train --seq-len 96 --optimize-for recall
+source .env && uv run wet-net train --seq-len 96 --optimize-for recall
 uv run python - <<'PY'
 import os, torch
 from huggingface_hub import HfApi, HfFolder
@@ -74,14 +83,32 @@ uv run wet-net pre-process --mock                                         # synt
 uv run wet-net train --seq-len 192 --optimize-for recall
 uv run wet-net train --seq-len 192 --optimize-for false_alarm --mock
 
-# Optional: push trained artifacts to Hugging Face
-uv run wet-net train --seq-len 96 --optimize-for recall --push-to-hub --hub-model-name WetNet/wet-net
+# Optional: push trained artifacts to Hugging Face (requires .env sourced)
+source .env && uv run wet-net train --seq-len 96 --optimize-for recall --push-to-hub --hub-model-name WetNet/wet-net
 
 # Optional: override hyperparameters by editing src/wet_net/config/best_configs.yaml
 # (any fields you change there are picked up automatically at runtime)
 
 # Evaluate saved checkpoints (no retraining)
 uv run wet-net evaluate --seq-len 192 --optimize-for recall
+```
+
+### HuggingFace Token Management
+
+The `hf-check` command helps you verify your HuggingFace authentication and repository access:
+
+```bash
+# Check token validity and repository access
+uv run wet-net hf-check WetNet/wet-net
+
+# Use a specific environment variable
+uv run wet-net hf-check WetNet/wet-net --env-var CUSTOM_HF_TOKEN
+
+# The command displays:
+# - Token authentication status
+# - User and organization information  
+# - Repository visibility (public/private)
+# - Inferred read/write permissions
 ```
 
 The code for the scripts can be found in the [src/wet_net/scripts](src/wet_net/scripts) directory.

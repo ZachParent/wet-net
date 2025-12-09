@@ -49,6 +49,7 @@ from wet_net.training.utils import (
     intelligent_batch_size,
     max_samples_for_seq,
     stride_for_seq,
+    set_seed,
 )
 
 console = Console()
@@ -98,7 +99,9 @@ def train_wetnet(
     device: torch.device,
     vib_cfg_overrides: dict | None = None,
     mock: bool = False,
+    seed: int | None = None,
 ) -> dict[str, Path]:
+    set_seed(seed)
     cfg = get_best_config(seq_len, optimize_for)
     bundle = build_data_bundle(preprocessed_path, seq_len, allow_mock_regen=mock)
     feature_cols = select_feature_columns(bundle.df)
@@ -134,6 +137,19 @@ def train_wetnet(
             st["epochs"] = min(2, st["epochs"])
             st["patience"] = 1
     total_epochs = sum(s["epochs"] for s in stages)
+    console.print(
+        f"[bold cyan]Training plan[/bold cyan] seq_len={seq_len}, optimize_for={optimize_for} "
+        f"(schedule={cfg.schedule_variant}, pcgrad={'on' if cfg.pcgrad else 'off'})"
+    )
+    console.print(f"Total stages={len(stages)}, total epochs={total_epochs}")
+    for idx, st in enumerate(stages, 1):
+        tasks = ", ".join(st["tasks"]) if st.get("tasks") else "none"
+        patience = st.get("patience", st["epochs"])
+        console.print(
+            f"  {idx}. {st['name']}: {st['epochs']} ep, lr={st['lr']}, tasks=[{tasks}], "
+            f"patience={patience}, pcgrad={'on' if st['pcgrad'] else 'off'}"
+        )
+    stage_prefix = f"Train seq{seq_len} ({optimize_for}) -> "
     with Progress(
         TextColumn("[cyan]{task.description}"),
         BarColumn(),
@@ -153,6 +169,7 @@ def train_wetnet(
             device,
             progress=progress,
             progress_task=task,
+            stage_prefix=stage_prefix,
         )
 
     vib_base = {
@@ -162,8 +179,8 @@ def train_wetnet(
         "d_style": 24,
         "nhead": 4,
         "layers": 3,
-        "epochs": 20,
-        "steps_per_epoch": 40,
+        "epochs": 40,
+        "steps_per_epoch": 80,
         "cls_weight": 2.0,
         "beta": 1e-3,
     }

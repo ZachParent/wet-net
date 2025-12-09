@@ -156,20 +156,32 @@ def build_training_stages(schedule_variant: str, pcgrad_enabled: bool) -> list[d
     }
     e1, e2, e3 = variants[schedule_variant]
     return [
-        {"name": f"{schedule_variant}_stage1", "epochs": e1, "lr": 3e-4, "tasks": ["reconstruction"], "pcgrad": False},
+        {
+            "name": f"{schedule_variant}_stage1",
+            "epochs": e1,
+            "min_epochs": max(5, e1 // 2),
+            "lr": 3e-4,
+            "tasks": ["reconstruction"],
+            "pcgrad": False,
+            "patience": 3,
+        },
         {
             "name": f"{schedule_variant}_stage2",
             "epochs": e2,
+            "min_epochs": max(6, e2 // 2),
             "lr": 2.5e-4,
             "tasks": ["reconstruction", "forecast"],
             "pcgrad": pcgrad_enabled,
+            "patience": 4,
         },
         {
             "name": f"{schedule_variant}_stage3",
             "epochs": e3,
+            "min_epochs": max(8, e3 // 2),
             "lr": 2e-4,
             "tasks": ["reconstruction", "forecast", "short", "long"],
             "pcgrad": pcgrad_enabled,
+            "patience": 5,
         },
     ]
 
@@ -183,6 +195,7 @@ def train_staged_model(
     device: torch.device,
     progress: Progress | None = None,
     progress_task: int | None = None,
+    stage_prefix: str = "",
 ) -> list[dict]:
     history: list[dict] = []
     for stage in stages:
@@ -191,6 +204,13 @@ def train_staged_model(
         best_state = None
         wait = 0
         patience = stage.get("patience", stage["epochs"])
+        min_epochs = stage.get("min_epochs", stage["epochs"])
+        if progress and progress_task is not None:
+            tasks_label = "/".join(stage["tasks"])
+            progress.update(
+                progress_task,
+                description=f"{stage_prefix}{stage['name']} ({tasks_label}, lr={stage['lr']})",
+            )
         for epoch in range(stage["epochs"]):
             train_metrics = run_epoch(
                 model,
@@ -222,7 +242,7 @@ def train_staged_model(
                 wait = 0
             else:
                 wait += 1
-                if patience and wait >= patience:
+                if (epoch + 1) >= min_epochs and patience and wait >= patience:
                     break
             if progress and progress_task is not None:
                 progress.advance(progress_task, 1)

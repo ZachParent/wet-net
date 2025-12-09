@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 import numpy as np
 import torch
 
@@ -47,3 +49,14 @@ def compute_class_weights(targets: np.ndarray, cols: list[int]) -> torch.Tensor:
     rates = targets[:, cols].mean(axis=0)
     weights = ((1 - rates) / (rates + 1e-6)).astype(np.float32)
     return torch.from_numpy(weights)
+
+
+def set_seed(seed: int | None) -> None:
+    """Best-effort reproducibility aligned with 07_tri_task_nexus notebook."""
+    if seed is None:
+        return
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)

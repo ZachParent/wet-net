@@ -84,15 +84,45 @@ class TimeSeriesDataset(Dataset):
         any_anomaly = self.targets.max(axis=1)
         pos_idx = np.where(any_anomaly == 1.0)[0]
         neg_idx = np.where(any_anomaly == 0.0)[0]
-        if len(pos_idx) == 0:
-            chosen = rng.choice(len(self.indices), max_samples, replace=False)
+
+        total = len(self.indices)
+        if total <= max_samples:
+            return
+
+        if len(pos_idx) == 0 or len(neg_idx) == 0:
+            chosen = rng.choice(total, max_samples, replace=False)
         else:
-            if len(pos_idx) >= max_samples:
-                chosen = rng.choice(pos_idx, max_samples, replace=False)
-            else:
-                remaining = max_samples - len(pos_idx)
-                chosen_neg = rng.choice(neg_idx, min(len(neg_idx), remaining), replace=False)
-                chosen = np.concatenate([pos_idx, chosen_neg])
+            # Preserve the original class ratio while guaranteeing both classes appear.
+            pos_frac = len(pos_idx) / total
+            pos_take = int(round(max_samples * pos_frac))
+            pos_take = max(1, min(len(pos_idx), pos_take))
+            neg_take = max_samples - pos_take
+            neg_take = max(1, min(len(neg_idx), neg_take))
+
+            # If the rounding/clamping pushed us over budget, trim the larger class.
+            overflow = pos_take + neg_take - max_samples
+            if overflow > 0:
+                if pos_take > neg_take:
+                    pos_take = max(1, pos_take - overflow)
+                else:
+                    neg_take = max(1, neg_take - overflow)
+
+            # If we are under budget (happens when one class is scarce), fill from the class with headroom.
+            deficit = max_samples - (pos_take + neg_take)
+            if deficit > 0:
+                pos_room = len(pos_idx) - pos_take
+                neg_room = len(neg_idx) - neg_take
+                if pos_room >= neg_room:
+                    add = min(pos_room, deficit)
+                    pos_take += add
+                    deficit -= add
+                if deficit > 0 and neg_room > 0:
+                    add = min(neg_room, deficit)
+                    neg_take += add
+
+            chosen_pos = rng.choice(pos_idx, pos_take, replace=False) if pos_take > 0 else np.array([], dtype=int)
+            chosen_neg = rng.choice(neg_idx, neg_take, replace=False) if neg_take > 0 else np.array([], dtype=int)
+            chosen = np.concatenate([chosen_pos, chosen_neg])
         rng.shuffle(chosen)
         self.indices = self.indices[chosen]
         self.targets = self.targets[chosen]

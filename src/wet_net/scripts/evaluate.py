@@ -1,0 +1,342 @@
+"""
+End-to-end evaluation and reporting for WetNet.
+
+Features:
+- Downloads model/vib/config from a Hugging Face repo if not already present.
+- Rebuilds the test split, runs inference, sweeps thresholds, and computes metrics.
+- Generates plots inspired by notebooks 07_tri_task_nexus and 08_conflict_top5_analysis:
+  * Conflict histogram (anomalous vs normal)
+  * Threshold sweep bar chart
+  * Forecast vs future example plot
+- Writes a concise markdown report plus CSV tables.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Iterable
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import torch
+import typer
+from huggingface_hub import HfApi, snapshot_download
+
+from wet_net.config.tri_task import HORIZONS, METRIC_THRESHOLDS, SEQ_LENGTHS, get_best_config
+from wet_net.data.datasets import (
+    TimeSeriesDataset,
+    TriTaskWindowDataset,
+    build_metadata,
+    build_policy_split,
+    compute_class_weights,
+    compute_future_sequences,
+    ensure_anomaly_coverage,
+    make_dataloaders,
+)
+from wet_net.data.preprocess import load_preprocessed_dataframe, select_feature_columns
+from wet_net.eval.metrics import evaluate_multi_horizon, sweep_fusion_thresholds
+from wet_net.eval.predictions import build_prediction_frame, collect_predictions
+from wet_net.models.vib import VIBTransformer
+from wet_net.models.wetnet import WetNet
+from wet_net.training.fusion import fuse_probabilities
+from wet_net.training.utils import (
+    batch_for_seq,
+    intelligent_batch_size,
+    max_samples_for_seq,
+    set_seed,
+    stride_for_seq,
+)
+
+app = typer.Typer()
+
+
+# --------------------------------------------------------------------------- #
+# Helpers                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+def ensure_artifacts(repo_id: str, run_id: str, out_dir: Path) -> dict[str, Path]:
+    """
+    Ensure artifacts exist locally; download from HF if missing.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    expected = {
+        "model": out_dir / "wetnet.pt",
+        "vib": out_dir / "vib.pt",
+        "config": out_dir / "config.json",
+    }
+    if all(p.exists() for p in expected.values()):
+        return expected
+
+    snapshot_dir = Path(
+        snapshot_download(
+            repo_id,
+            allow_patterns=["wetnet.pt", "vib.pt", "config.json", "metrics.csv", "augmented_metrics.csv"],
+        )
+    )
+    for name, path in expected.items():
+        src = snapshot_dir / path.name
+        if not src.exists():
+            raise FileNotFoundError(f"{path.name} not found in repo {repo_id}")
+        path.write_bytes(src.read_bytes())
+
+    # Copy optional CSVs if present
+    for fname in ["metrics.csv", "augmented_metrics.csv"]:
+        src = snapshot_dir / fname
+        if src.exists():
+            dst = out_dir / fname
+            if not dst.exists():
+                dst.write_bytes(src.read_bytes())
+    return expected
+
+
+def build_loaders(preprocessed: Path, seq_len: int):
+    df = load_preprocessed_dataframe(preprocessed)
+    feature_cols = select_feature_columns(df)
+    stride = stride_for_seq(seq_len)
+    max_samples = max_samples_for_seq(seq_len)
+    base_dataset = TimeSeriesDataset(
+        df,
+        seq_len=seq_len,
+        horizons=HORIZONS,
+        stride=stride,
+        max_samples=max_samples,
+        feature_cols=feature_cols,
+    )
+    future_targets, anchors, policies = compute_future_sequences(df, base_dataset, forecast_horizon=24)
+    tri_dataset = TriTaskWindowDataset(base_dataset, future_targets)
+    metadata = build_metadata(base_dataset, anchors, policies, HORIZONS)
+    splits = build_policy_split(metadata, (0.7, 0.15, 0.15))
+    ensure_anomaly_coverage(metadata, splits)
+    base_batch = batch_for_seq(seq_len)
+    batch_size = intelligent_batch_size(seq_len, len(feature_cols), base_batch, d_model_guess=256)
+    loaders = make_dataloaders(tri_dataset, splits, batch_size)
+    return df, tri_dataset, metadata, splits, loaders, feature_cols
+
+
+def threshold_curves(probs: np.ndarray, labels: np.ndarray, thr_grid: Iterable[float]) -> pd.DataFrame:
+    rows = []
+    for thr in thr_grid:
+        alert = probs >= thr
+        recall = float(alert[labels == 1].mean()) if np.any(labels == 1) else np.nan
+        false_alarm = float(alert[labels == 0].mean()) if np.any(labels == 0) else np.nan
+        rows.append({"threshold": thr, "recall": recall, "false_alarm": false_alarm})
+    return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------- #
+# Plotting                                                                    #
+# --------------------------------------------------------------------------- #
+
+
+def plot_conflict(conflict_scores: np.ndarray, labels: np.ndarray, out_dir: Path) -> Path:
+    sns.set_style("whitegrid")
+    df = pd.DataFrame({"conflict": conflict_scores, "label": np.where(labels == 1, "anomalous", "normal")})
+    fig, ax = plt.subplots(figsize=(7, 4))
+    sns.histplot(df, x="conflict", hue="label", stat="density", element="step", common_norm=False, bins=40, ax=ax)
+    ax.set_xlabel("Conflict coefficient K")
+    ax.set_ylabel("Density")
+    fig.tight_layout()
+    out_path = out_dir / "conflict_distribution.png"
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def plot_threshold_bars(thr_df: pd.DataFrame, out_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(6, 4))
+    thr_df.plot(x="threshold", y=["recall", "false_alarm"], kind="bar", ax=ax)
+    ax.set_ylabel("Rate")
+    ax.set_title("Threshold sweep (fused)")
+    fig.tight_layout()
+    out_path = out_dir / "threshold_sweep.png"
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def plot_forecast_example(preds: dict, df_meta: pd.DataFrame, out_dir: Path) -> Path | None:
+    """
+    Plot a single forecast vs target curve (first test sample).
+    Handles 1D or 2D forecast arrays.
+    """
+    if "forecast" not in preds or preds["forecast"].size == 0:
+        return None
+    forecast = preds["forecast"][0]
+    future = preds.get("future", None)
+    if forecast.ndim > 1:
+        forecast = np.squeeze(forecast)
+    if future is not None:
+        future = np.squeeze(future[0])
+    label = "?"
+    if len(df_meta) > 0:
+        label = df_meta.reset_index(drop=True).iloc[0].get("h24", "?")
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(forecast, label="Forecast h24")
+    if future is not None and future.shape == forecast.shape:
+        ax.plot(future, label="Future h24 (target)")
+    ax.set_title(f"Forecast example | label={label}")
+    ax.legend()
+    fig.tight_layout()
+    out_path = out_dir / "forecast_example.png"
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+# --------------------------------------------------------------------------- #
+# Main evaluation                                                             #
+# --------------------------------------------------------------------------- #
+
+
+def generate_report(
+    seq_len: int,
+    optimize_for: str,
+    repo_id: str,
+    data_path: Path,
+    out_dir: Path,
+    seed: int = 42,
+):
+    set_seed(seed)
+    run_id = f"seq{seq_len}_{optimize_for}"
+    artifacts = ensure_artifacts(repo_id, run_id, out_dir)
+
+    cfg = get_best_config(seq_len, optimize_for)
+    df, tri_dataset, metadata, splits, loaders, feature_cols = build_loaders(data_path, seq_len)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    short_cols, long_cols = [0, 1], [2, 3]
+    pos_weight_short = compute_class_weights(tri_dataset.base.targets, short_cols)
+    pos_weight_long = compute_class_weights(tri_dataset.base.targets, long_cols)
+
+    model = WetNet(
+        input_dim=len(feature_cols),
+        seq_len=seq_len,
+        forecast_horizon=24,
+        short_count=len(short_cols),
+        long_count=len(long_cols),
+        d_model=cfg.d_model,
+        n_layers=cfg.n_layers,
+        n_heads=cfg.n_heads,
+        dropout=cfg.dropout,
+    ).to(device)
+    model.load_state_dict(torch.load(artifacts["model"], map_location=device))
+    model.eval()
+
+    vib_cfg = json.loads(Path(artifacts["config"]).read_text()).get("vib_config", {})
+    vib_model = VIBTransformer(
+        input_dim=len(feature_cols),
+        seq_len=seq_len,
+        d_model=vib_cfg.get("d_model", 128),
+        d_content=vib_cfg.get("d_content", 64),
+        d_style=vib_cfg.get("d_style", 24),
+        nhead=vib_cfg.get("nhead", 4),
+        layers=vib_cfg.get("layers", 3),
+    ).to(device)
+    vib_model.load_state_dict(torch.load(artifacts["vib"], map_location=device))
+    vib_model.eval()
+
+    preds = collect_predictions(model, loaders["test"], device)
+    metrics = evaluate_multi_horizon(
+        torch.from_numpy(preds["probabilities"]),
+        torch.from_numpy(preds["targets"]),
+        [f"h{h}" for h in HORIZONS],
+    )
+    metrics_df = pd.DataFrame(list(metrics.items()), columns=["metric", "value"])
+
+    recon_mean = preds["recon_error"].mean()
+    recon_std = preds["recon_error"].std() + 1e-6
+    fused_prob, conflict_scores = fuse_probabilities(model, vib_model, loaders["test"], recon_mean, recon_std, device)
+
+    labels = metadata.loc[splits["test"], "h24"].to_numpy()
+    fusion_rows = sweep_fusion_thresholds(fused_prob, labels, METRIC_THRESHOLDS)
+    fusion_rows.append({"metric": "conflict_mean", "value": float(conflict_scores.mean())})
+    fusion_df = pd.concat([metrics_df, pd.DataFrame(fusion_rows)], ignore_index=True)
+
+    thr_df = threshold_curves(fused_prob, labels, np.linspace(0.1, 0.9, 9))
+
+    # Save tables
+    out_dir.mkdir(parents=True, exist_ok=True)
+    metrics_df.to_csv(out_dir / "metrics.csv", index=False)
+    fusion_df.to_csv(out_dir / "augmented_metrics.csv", index=False)
+    thr_df.to_csv(out_dir / "threshold_sweep.csv", index=False)
+
+    # Plots
+    conflict_path = plot_conflict(conflict_scores, labels, out_dir)
+    sweep_path = plot_threshold_bars(thr_df, out_dir)
+    preds_frame = build_prediction_frame(metadata, splits["test"], preds)
+    preds_frame.to_csv(out_dir / "predictions.csv", index=False)
+    forecast_path = plot_forecast_example(preds, metadata.iloc[splits["test"]], out_dir)
+
+    # Markdown report
+    report = [
+        f"# WetNet Evaluation Report ({run_id})",
+        "",
+        f"- Repo: `{repo_id}`",
+        f"- Sequence length: {seq_len}",
+        f"- Optimize for: {optimize_for}",
+        f"- Test samples: {len(splits['test'])}",
+        "",
+        "## Key Metrics",
+        fusion_df.to_string(index=False),
+        "",
+        "## Artifacts",
+        f"- Conflict histogram: {conflict_path}",
+        f"- Threshold sweep: {sweep_path}",
+        f"- Forecast example: {forecast_path or 'n/a'}",
+        f"- Metrics CSV: {out_dir / 'metrics.csv'}",
+        f"- Augmented metrics CSV: {out_dir / 'augmented_metrics.csv'}",
+        f"- Threshold sweep CSV: {out_dir / 'threshold_sweep.csv'}",
+        f"- Predictions CSV: {out_dir / 'predictions.csv'}",
+    ]
+    (out_dir / "report.md").write_text("\n".join(report))
+    typer.secho(f"Report written to {out_dir / 'report.md'}", fg=typer.colors.GREEN)
+    return {
+        "metrics": out_dir / "metrics.csv",
+        "augmented_metrics": out_dir / "augmented_metrics.csv",
+        "threshold_sweep": out_dir / "threshold_sweep.csv",
+        "conflict_plot": conflict_path,
+        "sweep_plot": sweep_path,
+        "forecast_plot": forecast_path,
+        "report": out_dir / "report.md",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# CLI                                                                         #
+# --------------------------------------------------------------------------- #
+
+
+@app.command()
+def evaluate(
+    seq_len: int = typer.Option(96, help="Sequence length used during training."),
+    optimize_for: str = typer.Option("recall", help="recall or false_alarm; matches saved config."),
+    repo_id: str = typer.Option("WetNet/wet-net", help="Hugging Face repo to pull artifacts from."),
+    data_dir: str = typer.Option("./data/processed", help="Directory containing preprocessed parquet."),
+    preprocessed_name: str = typer.Option("anomalous_consumption_preprocessed.parquet", help="Parquet filename."),
+    output_dir: str = typer.Option("./results/wetnet/report", help="Where to write report/plots."),
+    seed: int = typer.Option(42, help="Random seed."),
+):
+    """
+    Run full evaluation + reporting without retraining.
+    """
+    if seq_len not in SEQ_LENGTHS:
+        typer.secho(f"seq_len must be one of {SEQ_LENGTHS}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    data_path = Path(data_dir) / preprocessed_name
+    if not data_path.exists():
+        typer.secho(f"Preprocessed parquet not found at {data_path}. Run `wet-net pre-process` first.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    out_dir = Path(output_dir) / f"seq{seq_len}_{optimize_for}"
+    generate_report(seq_len, optimize_for, repo_id, data_path, out_dir, seed=seed)
+
+
+if __name__ == "__main__":
+    app()
