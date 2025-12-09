@@ -24,8 +24,6 @@ dependencies = [
     "pyarrow>=22.0.0",
     "requests>=2.32.5",
     "safetensors>=0.7.0",
-    "torch>=2.9.1",
-    "torchvision>=0.24.1",
     "typer>=0.19.2",
     "umap-learn>=0.5.7",
     "rich>=13.9.2",
@@ -45,15 +43,6 @@ dev = [
     "ruff>=0.14.4",
     "streamlit>=1.50.0",
 ]
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
-[tool.uv.sources]
-# Use cuda 12.8 on non-macOS systems
-torch = { index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }
 
 [project.scripts]
 wet-net = "wet_net.scripts.wet_net:app"
