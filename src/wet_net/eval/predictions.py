@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, List
-
 import numpy as np
 import pandas as pd
 import torch
@@ -11,7 +9,7 @@ from torch.utils.data import DataLoader
 from wet_net.models.wetnet import WetNet
 
 
-def collect_predictions(model: WetNet, loader: DataLoader, device: torch.device) -> Dict[str, np.ndarray]:
+def collect_predictions(model: WetNet, loader: DataLoader, device: torch.device) -> dict[str, np.ndarray]:
     model.eval()
     probs, targets, recon_errs = [], [], []
     forecasts, futures = [], []
@@ -35,7 +33,9 @@ def collect_predictions(model: WetNet, loader: DataLoader, device: torch.device)
     }
 
 
-def build_prediction_frame(meta_df: pd.DataFrame, indices: List[int], predictions: Dict[str, np.ndarray]) -> pd.DataFrame:
+def build_prediction_frame(
+    meta_df: pd.DataFrame, indices: list[int], predictions: dict[str, np.ndarray]
+) -> pd.DataFrame:
     subset = meta_df.loc[indices].copy().reset_index(drop=True)
     return subset.assign(
         prob_24=predictions["probabilities"][:, 0],

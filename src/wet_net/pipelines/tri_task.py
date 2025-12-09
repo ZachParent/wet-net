@@ -3,26 +3,25 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict, List
 
 import pandas as pd
 import torch
 from rich.console import Console
 from rich.progress import (
-    Progress,
     BarColumn,
-    TimeRemainingColumn,
-    TimeElapsedColumn,
+    Progress,
     TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
 )
 
 from wet_net.config.tri_task import (
     FORECAST_HORIZON,
     HORIZONS,
     METRIC_THRESHOLDS,
+    TEST_RATIO,
     TRAIN_RATIO,
     VAL_RATIO,
-    TEST_RATIO,
     get_best_config,
 )
 from wet_net.data.datasets import (
@@ -31,12 +30,11 @@ from wet_net.data.datasets import (
     TriTaskWindowDataset,
     build_metadata,
     build_policy_split,
+    compute_class_weights,
     compute_future_sequences,
     ensure_anomaly_coverage,
     make_balanced_loader,
     make_dataloaders,
-    summarize_splits,
-    compute_class_weights,
 )
 from wet_net.data.preprocess import load_preprocessed_dataframe, select_feature_columns
 from wet_net.eval.metrics import evaluate_multi_horizon, sweep_fusion_thresholds
@@ -98,9 +96,9 @@ def train_wetnet(
     optimize_for: str,
     preprocessed_path: Path,
     device: torch.device,
-    vib_cfg_overrides: Dict | None = None,
+    vib_cfg_overrides: dict | None = None,
     mock: bool = False,
-) -> Dict[str, Path]:
+) -> dict[str, Path]:
     cfg = get_best_config(seq_len, optimize_for)
     bundle = build_data_bundle(preprocessed_path, seq_len, allow_mock_regen=mock)
     feature_cols = select_feature_columns(bundle.df)
@@ -186,7 +184,9 @@ def train_wetnet(
     ).to(device)
 
     # quick probe training
-    balanced_loader = make_balanced_loader(bundle.dataset, bundle.splits["train"], batch_size=bundle.loaders["train"].batch_size)
+    balanced_loader = make_balanced_loader(
+        bundle.dataset, bundle.splits["train"], batch_size=bundle.loaders["train"].batch_size
+    )
     optimizer = torch.optim.AdamW(vib_model.parameters(), lr=1e-3)
     iterator = iter(balanced_loader)
     vib_model.train()
@@ -213,7 +213,7 @@ def train_wetnet(
         if epoch % 5 == 0 or epoch == vib_base["epochs"] - 1:
             _ = total / vib_base["steps_per_epoch"]
 
-    artifacts: Dict[str, Path] = {}
+    artifacts: dict[str, Path] = {}
     run_id = f"seq{seq_len}_{optimize_for}"
     out_dir = RESULTS_DIR / "wetnet" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -238,7 +238,9 @@ def train_wetnet(
     recon_mean = preds["recon_error"].mean()
     recon_std = preds["recon_error"].std() + 1e-6
     vib_model.eval()
-    fused_prob, conflict_scores = fuse_probabilities(model, vib_model, bundle.loaders["test"], recon_mean, recon_std, device)
+    fused_prob, conflict_scores = fuse_probabilities(
+        model, vib_model, bundle.loaders["test"], recon_mean, recon_std, device
+    )
     labels = bundle.metadata.loc[bundle.splits["test"], "h24"].to_numpy()
     fusion_rows = sweep_fusion_thresholds(fused_prob, labels, METRIC_THRESHOLDS)
     fusion_rows.append({"metric": "conflict_mean", "value": float(conflict_scores.mean())})

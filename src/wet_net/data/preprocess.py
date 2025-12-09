@@ -10,13 +10,13 @@ Key behaviors:
 
 from __future__ import annotations
 
+import zipfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
 import requests
-import zipfile
 
 from wet_net.paths import DATA_DIR
 
@@ -65,7 +65,8 @@ def create_mock_dataset(out_path: Path = MOCK_PARQUET, days: int = 30, seed: int
         anomaly_hours = rng.choice(len(timestamps), size=max(4, days // 2), replace=False)
         consum = base.copy()
         consum[anomaly_hours] *= rng.uniform(1.8, 2.6, size=len(anomaly_hours))
-        for t, c, is_anom in zip(timestamps, consum, np.isin(range(len(timestamps)), anomaly_hours)):
+        flags = np.isin(range(len(timestamps)), anomaly_hours)
+        for t, c, is_anom in zip(timestamps, consum, flags, strict=False):
             rows.append(
                 {
                     "POLISSA_SUBM": pol,

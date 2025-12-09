@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import Dict, List, Tuple, Optional
-
 import torch
 import torch.nn.functional as F
+from rich.progress import Progress
 from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
-
-from rich.progress import Progress
 
 from wet_net.models.wetnet import WetNet
 from wet_net.training.utils import EFFECTIVE_BATCH_SIZE
@@ -16,7 +13,7 @@ from wet_net.training.utils import EFFECTIVE_BATCH_SIZE
 TASK_WEIGHTS = {"reconstruction": 1.0, "forecast": 0.6, "short": 1.2, "long": 1.2}
 
 
-def pcgrad_step(model: torch.nn.Module, objectives: List[torch.Tensor], scale: float = 1.0) -> None:
+def pcgrad_step(model: torch.nn.Module, objectives: list[torch.Tensor], scale: float = 1.0) -> None:
     params = [p for p in model.parameters() if p.requires_grad]
     prev_grads = [p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p) for p in params]
     grads = []
@@ -29,12 +26,14 @@ def pcgrad_step(model: torch.nn.Module, objectives: List[torch.Tensor], scale: f
         for j in range(len(projected)):
             if i == j:
                 continue
-            dot = sum((g_i * g_j).sum() for g_i, g_j in zip(projected[i], projected[j]))
+            dot = sum((g_i * g_j).sum() for g_i, g_j in zip(projected[i], projected[j], strict=False))
             if dot < 0:
                 norm_sq = sum((g_j**2).sum() for g_j in projected[j]) + 1e-12
                 coeff = dot / norm_sq
-                projected[i] = [g_i - coeff * g_j for g_i, g_j in zip(projected[i], projected[j])]
-    for idx, (p, grad_components) in enumerate(zip(params, zip(*projected))):
+                projected[i] = [
+                    g_i - coeff * g_j for g_i, g_j in zip(projected[i], projected[j], strict=False)
+                ]
+    for idx, (p, grad_components) in enumerate(zip(params, zip(*projected, strict=False), strict=False)):
         total_grad = torch.zeros_like(p)
         for g in grad_components:
             total_grad += g
@@ -48,12 +47,12 @@ def pcgrad_step(model: torch.nn.Module, objectives: List[torch.Tensor], scale: f
 
 def forward_pass(
     model: WetNet,
-    batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    active_tasks: List[str],
+    batch: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    active_tasks: list[str],
     pos_weight_short: torch.Tensor,
     pos_weight_long: torch.Tensor,
     device: torch.device,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     seq, multi_targets, future = batch
     seq = seq.to(device)
     multi_targets = multi_targets.to(device)
@@ -83,14 +82,14 @@ def run_epoch(
     model: WetNet,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
-    active_tasks: List[str],
+    active_tasks: list[str],
     pos_weight_short: torch.Tensor,
     pos_weight_long: torch.Tensor,
     device: torch.device,
     train: bool,
     use_pcgrad: bool,
     effective_batch_size: int = EFFECTIVE_BATCH_SIZE,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     if train:
         model.train()
     else:
@@ -109,7 +108,10 @@ def run_epoch(
     step_in_accum = 0
     with torch.set_grad_enabled(train):
         for batch in loader:
-            with autocast(device_type="cuda" if torch.cuda.is_available() else "cpu", enabled=torch.cuda.is_available()):
+            with autocast(
+                device_type="cuda" if torch.cuda.is_available() else "cpu",
+                enabled=torch.cuda.is_available(),
+            ):
                 result = forward_pass(model, batch, active_tasks, pos_weight_short, pos_weight_long, device)
                 total = 0.0
                 weighted_losses = []
@@ -147,7 +149,7 @@ def run_epoch(
     return metrics
 
 
-def build_training_stages(schedule_variant: str, pcgrad_enabled: bool) -> List[Dict]:
+def build_training_stages(schedule_variant: str, pcgrad_enabled: bool) -> list[dict]:
     variants = {
         "baseline": (10, 16, 24),
         "extended": (14, 22, 32),
@@ -174,15 +176,15 @@ def build_training_stages(schedule_variant: str, pcgrad_enabled: bool) -> List[D
 
 def train_staged_model(
     model: WetNet,
-    loaders: Dict[str, DataLoader],
-    stages: List[Dict],
+    loaders: dict[str, DataLoader],
+    stages: list[dict],
     pos_weight_short: torch.Tensor,
     pos_weight_long: torch.Tensor,
     device: torch.device,
-    progress: Optional[Progress] = None,
-    progress_task: Optional[int] = None,
-) -> List[Dict]:
-    history: List[Dict] = []
+    progress: Progress | None = None,
+    progress_task: int | None = None,
+) -> list[dict]:
+    history: list[dict] = []
     for stage in stages:
         optimizer = AdamW(model.parameters(), lr=stage["lr"])
         best_val = float("inf")

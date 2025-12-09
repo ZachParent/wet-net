@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 import torch
 
@@ -45,7 +43,7 @@ def intelligent_batch_size(seq_len: int, feature_count: int, base_batch: int, d_
     return max(2, new_batch)
 
 
-def compute_class_weights(targets: np.ndarray, cols: List[int]) -> torch.Tensor:
+def compute_class_weights(targets: np.ndarray, cols: list[int]) -> torch.Tensor:
     rates = targets[:, cols].mean(axis=0)
     weights = ((1 - rates) / (rates + 1e-6)).astype(np.float32)
     return torch.from_numpy(weights)

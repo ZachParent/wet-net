@@ -28,7 +28,9 @@ class DualVIB(nn.Module):
 
 
 class VIBTransformer(nn.Module):
-    def __init__(self, input_dim: int, seq_len: int, d_model: int, d_content: int, d_style: int, nhead: int, layers: int):
+    def __init__(
+        self, input_dim: int, seq_len: int, d_model: int, d_content: int, d_style: int, nhead: int, layers: int
+    ):
         super().__init__()
         self.seq_len = seq_len
         self.proj = nn.Linear(input_dim, d_model)

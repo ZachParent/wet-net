@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any
 
 import yaml
 
@@ -29,7 +29,7 @@ class ModelConfig:
 
 
 # Derived from the original grid + augmented metrics (best across thresholds)
-BEST_CONFIGS: Dict[str, Dict[int, ModelConfig]] = {
+BEST_CONFIGS: dict[str, dict[int, ModelConfig]] = {
     "recall": {
         96: ModelConfig(160, 4, 8, 0.05, "extended", True, 0.4),
         192: ModelConfig(160, 4, 8, 0.05, "extended", False, 0.4),
@@ -51,7 +51,8 @@ def get_best_config(seq_len: int, optimize_for: str) -> ModelConfig:
     if optimize_for not in BEST_CONFIGS:
         raise ValueError(f"optimize_for must be one of {list(BEST_CONFIGS.keys())}")
     if seq_len not in BEST_CONFIGS[optimize_for]:
-        raise ValueError(f"No cached config for seq_len={seq_len}. Available: {list(BEST_CONFIGS[optimize_for].keys())}")
+        available = list(BEST_CONFIGS[optimize_for].keys())
+        raise ValueError(f"No cached config for seq_len={seq_len}. Available: {available}")
     base = BEST_CONFIGS[optimize_for][seq_len]
     return apply_yaml_override(base, optimize_for, seq_len)
 
@@ -64,7 +65,7 @@ def apply_yaml_override(base: ModelConfig, optimize_for: str, seq_len: int, path
     if not path.exists():
         return base
     try:
-        overrides: Dict[str, Any] = yaml.safe_load(path.read_text()) or {}
+        overrides: dict[str, Any] = yaml.safe_load(path.read_text()) or {}
     except yaml.YAMLError:
         return base
     opt_section = overrides.get(optimize_for, {})

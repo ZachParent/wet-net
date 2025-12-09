@@ -1,8 +1,8 @@
-from pathlib import Path
 import shutil
+from pathlib import Path
 
-import typer
 import torch
+import typer
 from huggingface_hub import HfApi
 
 from wet_net.config.tri_task import SEQ_LENGTHS
@@ -17,11 +17,15 @@ def train(
     optimize_for: str = typer.Option("recall", help="Optimization target: recall or false_alarm."),
     mock: bool = typer.Option(False, "--mock", help="Use mock dataset (requires pre_process --mock)."),
     data_path: str | None = typer.Option(None, help="Preprocessed parquet path; defaults to processed output."),
-    data_dir: str = typer.Option("./data", help="(legacy) data directory; used to locate preprocessed parquet if provided."),
+    data_dir: str = typer.Option(
+        "./data", help="(legacy) data directory; used to locate preprocessed parquet if provided."
+    ),
     local_model_path: str | None = typer.Option(None, help="Optional path to copy wetnet.pt after training."),
     dry_run: bool = typer.Option(False, help="Show what would happen without training."),
     push_to_hub: bool = typer.Option(False, help="Upload artifacts to Hugging Face after training."),
-    upload_only: bool = typer.Option(False, help="Skip training; just upload existing artifacts (implies --push-to-hub)."),
+    upload_only: bool = typer.Option(
+        False, help="Skip training; just upload existing artifacts (implies --push-to-hub)."
+    ),
     hub_model_name: str = typer.Option("WetNet/wet-net", help="Repo name to push to on Hugging Face."),
 ):
     """
@@ -58,7 +62,8 @@ def train(
 
     if dry_run:
         typer.secho(
-            f"[dry-run] Would train seq_len={seq_len}, optimize_for={optimize_for}, mock={mock}, preprocessed={preprocessed}",
+            f"[dry-run] Would train seq_len={seq_len}, optimize_for={optimize_for}, "
+            f"mock={mock}, preprocessed={preprocessed}",
             fg=typer.colors.YELLOW,
         )
         if upload_only:

@@ -1,4 +1,5 @@
 import os
+
 import typer
 
 from wet_net.data.preprocess import prepare_dataset
@@ -21,7 +22,7 @@ def pre_process(
         out_path = prepare_dataset(mock=mock, data_url=url)
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
     typer.secho(f"Preprocessed parquet ready at {out_path}", fg=typer.colors.GREEN)
 
 

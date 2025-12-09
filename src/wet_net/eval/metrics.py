@@ -7,7 +7,9 @@ import numpy as np
 import torch
 
 
-def evaluate_multi_horizon(probabilities: torch.Tensor, targets: torch.Tensor, horizon_names: list | None = None) -> dict:
+def evaluate_multi_horizon(
+    probabilities: torch.Tensor, targets: torch.Tensor, horizon_names: list | None = None
+) -> dict:
     stats = {}
     if horizon_names is None:
         horizon_names = [f"h{i}" for i in range(probabilities.shape[1])]

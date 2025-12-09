@@ -86,7 +86,7 @@ def fuse_probabilities(
             avg_logvar = torch.mean(torch.cat([c_logvar, s_logvar], dim=-1), dim=(1, 2))
             uncert = entropy_from_logvar(avg_logvar).cpu().numpy()
             vib_mass = [mass_from_uncertainty(u) for u in uncert]
-            for rm, fm, vm in zip(recon_mass, fore_mass, vib_mass):
+            for rm, fm, vm in zip(recon_mass, fore_mass, vib_mass, strict=False):
                 comb, conflict = combine_masses(rm, fm)
                 comb, conflict = combine_masses(comb, vm)
                 fused_prob.append(comb["A"])

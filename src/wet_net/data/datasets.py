@@ -4,16 +4,13 @@ Dataset helpers for WetNet.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset, WeightedRandomSampler
 
-from wet_net.data.preprocess import FEATURE_COLS, load_preprocessed_dataframe
-from wet_net.paths import DATA_DIR
+from wet_net.data.preprocess import FEATURE_COLS
 
 
 class TimeSeriesDataset(Dataset):
@@ -133,7 +130,7 @@ def compute_future_sequences(
     dataset: TimeSeriesDataset,
     forecast_horizon: int,
     consumption_col: str = "CONSUMO_REAL_norm",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     values = df[consumption_col].to_numpy().astype(np.float32)
     timestamps = df["FECHA_HORA"].to_numpy()
     policies = df["POLISSA_SUBM"].to_numpy()
@@ -155,7 +152,7 @@ def build_metadata(
     dataset: TimeSeriesDataset,
     anchors: np.ndarray,
     policies: np.ndarray,
-    horizons: List[int],
+    horizons: list[int],
 ) -> pd.DataFrame:
     meta = pd.DataFrame(
         {
@@ -170,7 +167,7 @@ def build_metadata(
     return meta
 
 
-def build_policy_split(meta_df: pd.DataFrame, ratios: Tuple[float, float, float]) -> Dict[str, List[int]]:
+def build_policy_split(meta_df: pd.DataFrame, ratios: tuple[float, float, float]) -> dict[str, list[int]]:
     train_ratio, val_ratio, test_ratio = ratios
     splits = {"train": [], "val": [], "test": []}
     for _, group in meta_df.sort_values("timestamp").groupby("policy"):
@@ -179,14 +176,18 @@ def build_policy_split(meta_df: pd.DataFrame, ratios: Tuple[float, float, float]
         if n == 0:
             continue
         train_end = max(1, min(int(np.floor(n * train_ratio)), n - 2)) if n > 2 else max(1, n - 2)
-        val_end = max(train_end + 1, min(int(np.floor(n * (train_ratio + val_ratio))), n - 1)) if n > 2 else train_end + 1
+        val_end = (
+            max(train_end + 1, min(int(np.floor(n * (train_ratio + val_ratio))), n - 1))
+            if n > 2
+            else train_end + 1
+        )
         splits["train"].extend(ordered[:train_end].tolist())
         splits["val"].extend(ordered[train_end:val_end].tolist())
         splits["test"].extend(ordered[val_end:].tolist())
     return splits
 
 
-def ensure_anomaly_coverage(meta_df: pd.DataFrame, splits: Dict[str, List[int]]) -> None:
+def ensure_anomaly_coverage(meta_df: pd.DataFrame, splits: dict[str, list[int]]) -> None:
     if meta_df["any_anomaly"].sum() == 0:
         return
     for target in ("val", "test"):
@@ -199,7 +200,7 @@ def ensure_anomaly_coverage(meta_df: pd.DataFrame, splits: Dict[str, List[int]])
             splits[target].append(donor)
 
 
-def summarize_splits(meta_df: pd.DataFrame, splits: Dict[str, List[int]]) -> pd.DataFrame:
+def summarize_splits(meta_df: pd.DataFrame, splits: dict[str, list[int]]) -> pd.DataFrame:
     rows = []
     for split, idxs in splits.items():
         subset = meta_df.loc[idxs] if idxs else pd.DataFrame(columns=meta_df.columns)
@@ -214,7 +215,7 @@ def summarize_splits(meta_df: pd.DataFrame, splits: Dict[str, List[int]]) -> pd.
     return pd.DataFrame(rows)
 
 
-def make_dataloaders(dataset: Dataset, splits: Dict[str, List[int]], batch_size: int) -> Dict[str, DataLoader]:
+def make_dataloaders(dataset: Dataset, splits: dict[str, list[int]], batch_size: int) -> dict[str, DataLoader]:
     loaders = {}
     for split, idxs in splits.items():
         subset = Subset(dataset, idxs)
@@ -227,7 +228,7 @@ def make_dataloaders(dataset: Dataset, splits: Dict[str, List[int]], batch_size:
     return loaders
 
 
-def make_balanced_loader(dataset: Dataset, indices: List[int], batch_size: int) -> DataLoader:
+def make_balanced_loader(dataset: Dataset, indices: list[int], batch_size: int) -> DataLoader:
     if not indices:
         raise ValueError("Cannot build balanced loader without indices.")
     subset = Subset(dataset, indices)
@@ -239,7 +240,7 @@ def make_balanced_loader(dataset: Dataset, indices: List[int], batch_size: int) 
     return DataLoader(subset, batch_size=batch_size, sampler=sampler, drop_last=True)
 
 
-def compute_class_weights(targets: np.ndarray, cols: List[int]) -> torch.Tensor:
+def compute_class_weights(targets: np.ndarray, cols: list[int]) -> torch.Tensor:
     rates = targets[:, cols].mean(axis=0)
     weights = ((1 - rates) / (rates + 1e-6)).astype(np.float32)
     return torch.from_numpy(weights)
@@ -250,5 +251,5 @@ class DataBundle:
     df: pd.DataFrame
     dataset: TriTaskWindowDataset
     metadata: pd.DataFrame
-    splits: Dict[str, List[int]]
-    loaders: Dict[str, DataLoader]
+    splits: dict[str, list[int]]
+    loaders: dict[str, DataLoader]
