@@ -67,20 +67,22 @@ required-environments = [
     # 1. macOS (only arm64 is supported, and the default index is used)
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
 
-    # 2. Linux (Need to ensure both CPU and GPU/CUDA versions are resolvable)
+    # 2. Linux (Need to ensure default, CPU and GPU/CUDA versions are resolvable)
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and extra != 'gpu' and extra != 'cpu'",
     "sys_platform == 'linux' and platform_machine == 'x86_64' and extra != 'gpu' and extra == 'cpu'",
     "sys_platform == 'linux' and platform_machine == 'x86_64' and extra != 'cpu' and extra == 'gpu'",
 
-    # 3. Windows (Need to ensure both CPU and GPU/CUDA versions are resolvable)
+    # 3. Windows (Need to ensure default, CPU and GPU/CUDA versions are resolvable)
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and extra != 'gpu' and extra != 'cpu'",
     "sys_platform == 'win32' and platform_machine == 'AMD64' and extra != 'gpu' and extra == 'cpu'",
     "sys_platform == 'win32' and platform_machine == 'AMD64' and extra != 'cpu' and extra == 'gpu'",
 ]
 
 [tool.uv.sources]
 torch = [
-  { index = "pypi", marker = "sys_platform == 'darwin'" },
   { index = "torch-cpu", extra = "cpu", marker = "sys_platform != 'darwin'" },
   { index = "torch-gpu", extra = "gpu", marker = "sys_platform != 'darwin'" },
+  { index = "pypi", marker = "sys_platform == 'darwin'" },
 ]
 
 [[tool.uv.index]]
