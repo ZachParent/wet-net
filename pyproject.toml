@@ -60,12 +60,33 @@ conflicts = [
         { extra = "gpu" }
     ]
 ]
+# The required-environments setting ensures that a resolution is possible for 
+# each of these specific environment markers. This is critical for packages
+# like PyTorch which have complex binary dependencies (wheels).
+required-environments = [
+    # 1. macOS (only arm64 is supported, and the default index is used)
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+
+    # 2. Linux (Need to ensure both CPU and GPU/CUDA versions are resolvable)
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and extra != 'gpu' and extra == 'cpu'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and extra != 'cpu' and extra == 'gpu'",
+
+    # 3. Windows (Need to ensure both CPU and GPU/CUDA versions are resolvable)
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and extra != 'gpu' and extra == 'cpu'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and extra != 'cpu' and extra == 'gpu'",
+]
 
 [tool.uv.sources]
 torch = [
-  { index = "torch-cpu", extra = "cpu" },
-  { index = "torch-gpu", extra = "gpu" },
+  { index = "pypi", marker = "sys_platform == 'darwin'" },
+  { index = "torch-cpu", extra = "cpu", marker = "sys_platform != 'darwin'" },
+  { index = "torch-gpu", extra = "gpu", marker = "sys_platform != 'darwin'" },
 ]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+explicit = true
 
 [[tool.uv.index]]
 name = "torch-cpu"
