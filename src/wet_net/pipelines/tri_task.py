@@ -40,7 +40,6 @@ from wet_net.eval.metrics import evaluate_multi_horizon, sweep_fusion_thresholds
 from wet_net.eval.predictions import build_prediction_frame, collect_predictions
 from wet_net.models.vib import VIBTransformer
 from wet_net.models.wetnet import WetNet
-from wet_net.paths import RESULTS_DIR
 from wet_net.training.fusion import fuse_probabilities
 from wet_net.training.loops import build_training_stages, train_staged_model
 from wet_net.training.utils import (
@@ -101,6 +100,7 @@ def train_wetnet(
     optimize_for: str,
     preprocessed_path: Path,
     device: torch.device,
+    results_dir: Path,
     vib_cfg_overrides: dict | None = None,
     mock: bool = False,
     seed: int | None = None,
@@ -282,12 +282,12 @@ def train_wetnet(
                 total += loss.item()
             if epoch % 5 == 0 or epoch == vib_base["epochs"] - 1:
                 avg_loss = total / vib_base["steps_per_epoch"]
-                console.log(f"VIB epoch {epoch+1}/{vib_base['epochs']} | loss={avg_loss:.4f}")
+                console.log(f"VIB epoch {epoch + 1}/{vib_base['epochs']} | loss={avg_loss:.4f}")
             vib_progress.advance(vib_task, 1)
 
     artifacts: dict[str, Path] = {}
     run_id = f"seq{seq_len}_{optimize_for}{run_suffix}"
-    out_dir = RESULTS_DIR / "wetnet" / run_id
+    out_dir = results_dir / "wetnet" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "wetnet.pt"
     vib_path = out_dir / "vib.pt"

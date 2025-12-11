@@ -61,6 +61,7 @@ def train(
         "",
         help="Optional suffix for run directory (e.g., _fast) to avoid overwriting full runs.",
     ),
+    results_dir: str = typer.Option("./results", help="Directory to save training results."),
 ):
     """
     Train WetNet with the cached best configuration (no grid search).
@@ -72,7 +73,8 @@ def train(
     upload_to_hub = push_to_hub or upload_only
     suffix = run_suffix or ("_fast" if fast or max_epochs else "")
     run_id = f"seq{seq_len}_{optimize_for}{suffix}"
-    base_dir = Path("results/wetnet") / run_id
+    results_dir_path = Path(results_dir)
+    base_dir = results_dir_path / "wetnet" / run_id
 
     # If user only wants to push the existing model, skip training when artifact is present.
     if push_model_only and not upload_only:
@@ -125,9 +127,8 @@ def train(
         else:
             # Fallback to default locations if data_path not provided
             if mock:
-                from wet_net.data.preprocess import DATA_DIR
-
-                preprocessed = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+                # Default mock location relative to current directory
+                preprocessed = Path("./data/processed/mock_preprocessed.parquet")
             else:
                 from wet_net.data.preprocess import PROCESSED_PARQUET
 
@@ -156,6 +157,7 @@ def train(
             optimize_for=optimize_for,
             preprocessed_path=preprocessed,
             device=device,
+            results_dir=results_dir_path,
             mock=mock,
             seed=seed,
             fast_epochs=(max_epochs if max_epochs is not None else (2 if fast else None)),

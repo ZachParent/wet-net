@@ -18,8 +18,6 @@ import numpy as np
 import pandas as pd
 import requests
 
-from wet_net.paths import DATA_DIR
-
 # Default feature columns (mirrors the notebook)
 FEATURE_COLS: list[str] = [
     "CONSUMO_REAL_norm",
@@ -37,10 +35,11 @@ FEATURE_COLS: list[str] = [
     "is_weekend",
 ]
 
-RAW_PARQUET = DATA_DIR / "raw" / "anomalous_consumption.parquet"
-PROCESSED_PARQUET = DATA_DIR / "processed" / "anomalous_consumption_preprocessed.parquet"
-MOCK_PARQUET = DATA_DIR / "mock" / "mock_consumption.parquet"
-MOCK_CSV = DATA_DIR / "mock" / "mock_consumption.csv"
+# Default paths relative to current working directory
+RAW_PARQUET = Path("./data/raw/anomalous_consumption.parquet")
+PROCESSED_PARQUET = Path("./data/processed/anomalous_consumption_preprocessed.parquet")
+MOCK_PARQUET = Path("./data/mock/mock_consumption.parquet")
+MOCK_CSV = Path("./data/mock/mock_consumption.csv")
 
 
 def download_file(url: str, dest: Path, chunk_size: int = 1 << 20) -> Path:
@@ -106,8 +105,7 @@ def robust_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
 
     if "is_anomalous" not in data.columns and "START_DATE" in data.columns:
         data["is_anomalous"] = (
-            (data["FECHA_HORA"] >= data["START_DATE"])
-            & (data["FECHA_HORA"] <= data["END_DATE"])
+            (data["FECHA_HORA"] >= data["START_DATE"]) & (data["FECHA_HORA"] <= data["END_DATE"])
         ).astype(np.float32)
     elif "is_anomalous" not in data.columns:
         data["is_anomalous"] = 0.0
@@ -191,7 +189,7 @@ def prepare_dataset(
     Ensure a parquet is available and preprocessed.
     """
     raw_path = MOCK_PARQUET if mock else RAW_PARQUET
-    processed_path = PROCESSED_PARQUET if not mock else DATA_DIR / "processed" / "mock_preprocessed.parquet"
+    processed_path = PROCESSED_PARQUET if not mock else Path("./data/processed/mock_preprocessed.parquet")
 
     if mock:
         if force_mock_regen or not raw_path.exists():

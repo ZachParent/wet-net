@@ -114,11 +114,15 @@ class TestTrainCLI:
         assert "[dry-run] Would upload existing artifacts to Hugging Face" in result.stdout
         assert "hub_model_name=WetNet/wet-net" in result.stdout
 
-    def test_train_mock(self):
+    def test_train_mock(self, tmp_path_factory):
         """Test full training pipeline with mock data."""
         # First ensure mock data exists
         preprocess_result = runner.invoke(app, ["pre-process", "--mock"])
         assert preprocess_result.exit_code == 0
+
+        # Use a temporary directory for results
+        tmp_results = tmp_path_factory.mktemp("results")
+        results_dir = str(tmp_results)
 
         result = runner.invoke(
             app,
@@ -132,16 +136,18 @@ class TestTrainCLI:
                 "--fast",
                 "--max-epochs",
                 "1",
+                "--results-dir",
+                results_dir,
             ],
         )
         assert result.exit_code == 0
         assert "Training complete" in result.stdout
         assert "Saved artifacts to" in result.stdout
 
-        # Verify artifacts were created
-        from wet_net.paths import RESULTS_DIR
+        # Verify artifacts were created using the same results_dir
+        from pathlib import Path
 
-        artifacts_dir = RESULTS_DIR / "wetnet" / "seq96_recall_fast"
+        artifacts_dir = Path(results_dir) / "wetnet" / "seq96_recall_fast"
         assert (artifacts_dir / "wetnet.pt").exists()
         assert (artifacts_dir / "vib.pt").exists()
         assert (artifacts_dir / "config.json").exists()
@@ -215,6 +221,10 @@ class TestEvaluateCLI:
         preprocess_result = runner.invoke(app, ["pre-process", "--mock"])
         assert preprocess_result.exit_code == 0
 
+        # Use a temporary directory for results
+        tmp_results = tmp_path_factory.mktemp("results")
+        results_dir = str(tmp_results)
+
         # Train a model first (with fast mode)
         train_result = runner.invoke(
             app,
@@ -228,14 +238,16 @@ class TestEvaluateCLI:
                 "--fast",
                 "--max-epochs",
                 "1",
+                "--results-dir",
+                results_dir,
             ],
         )
         assert train_result.exit_code == 0
 
         # Now evaluate using the trained model (default behavior - checks local training dir)
-        from wet_net.data.preprocess import DATA_DIR
+        from pathlib import Path
 
-        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        mock_data_path = Path("./data/processed/mock_preprocessed.parquet")
         result = runner.invoke(
             app,
             [
@@ -248,15 +260,15 @@ class TestEvaluateCLI:
                 str(mock_data_path),
                 "--run-suffix",
                 "_fast",
+                "--results-dir",
+                results_dir,
             ],
         )
         assert result.exit_code == 0
         assert "Report written to" in result.stdout
 
-        # Verify report artifacts were created
-        from wet_net.paths import RESULTS_DIR
-
-        report_dir = RESULTS_DIR / "wetnet" / "report" / "seq96_recall_fast"
+        # Verify report artifacts were created using the same results_dir
+        report_dir = Path(results_dir) / "wetnet" / "report" / "seq96_recall_fast"
         assert (report_dir / "report.md").exists()
         assert (report_dir / "metrics.csv").exists()
         assert (report_dir / "augmented_metrics.csv").exists()
@@ -267,6 +279,10 @@ class TestEvaluateCLI:
         # First ensure mock data exists
         preprocess_result = runner.invoke(app, ["pre-process", "--mock"])
         assert preprocess_result.exit_code == 0
+
+        # Use a temporary directory for results
+        tmp_results = tmp_path_factory.mktemp("results")
+        results_dir = str(tmp_results)
 
         # Train a model first (with fast mode)
         train_result = runner.invoke(
@@ -281,16 +297,17 @@ class TestEvaluateCLI:
                 "--fast",
                 "--max-epochs",
                 "1",
+                "--results-dir",
+                results_dir,
             ],
         )
         assert train_result.exit_code == 0
 
         # Get the path to the trained artifacts
-        from wet_net.data.preprocess import DATA_DIR
-        from wet_net.paths import RESULTS_DIR
+        from pathlib import Path
 
-        artifacts_dir = RESULTS_DIR / "wetnet" / "seq96_recall_fast"
-        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        artifacts_dir = Path(results_dir) / "wetnet" / "seq96_recall_fast"
+        mock_data_path = Path("./data/processed/mock_preprocessed.parquet")
 
         # Evaluate using --local-artifacts-path
         result = runner.invoke(
@@ -305,21 +322,23 @@ class TestEvaluateCLI:
                 str(mock_data_path),
                 "--local-artifacts-path",
                 str(artifacts_dir),
+                "--results-dir",
+                results_dir,
             ],
         )
         assert result.exit_code == 0
         assert "Report written to" in result.stdout
 
-        # Verify report artifacts were created
-        report_dir = RESULTS_DIR / "wetnet" / "report" / "seq96_recall"
+        # Verify report artifacts were created using the same results_dir
+        report_dir = Path(results_dir) / "wetnet" / "report" / "seq96_recall"
         assert (report_dir / "report.md").exists()
         assert (report_dir / "metrics.csv").exists()
 
     def test_evaluate_with_local_artifacts_path_fails_nonexistent(self):
         """Test that --local-artifacts-path fails when path doesn't exist."""
-        from wet_net.data.preprocess import DATA_DIR
+        from pathlib import Path
 
-        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        mock_data_path = Path("./data/processed/mock_preprocessed.parquet")
         # Ensure mock data exists
         if not mock_data_path.exists():
             runner.invoke(app, ["pre-process", "--mock"])
@@ -336,6 +355,8 @@ class TestEvaluateCLI:
                 str(mock_data_path),
                 "--local-artifacts-path",
                 "/nonexistent/path/to/artifacts",
+                "--results-dir",
+                "./results",
             ],
         )
         assert result.exit_code == 1
@@ -343,9 +364,9 @@ class TestEvaluateCLI:
 
     def test_evaluate_with_local_artifacts_path_fails_missing_artifacts(self, tmp_path_factory):
         """Test that --local-artifacts-path fails when required artifacts are missing."""
-        from wet_net.data.preprocess import DATA_DIR
+        from pathlib import Path
 
-        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        mock_data_path = Path("./data/processed/mock_preprocessed.parquet")
         # Ensure mock data exists
         if not mock_data_path.exists():
             runner.invoke(app, ["pre-process", "--mock"])
@@ -364,6 +385,8 @@ class TestEvaluateCLI:
                 str(mock_data_path),
                 "--local-artifacts-path",
                 str(tmp_dir),
+                "--results-dir",
+                "./results",
             ],
         )
         assert result.exit_code == 1
@@ -371,9 +394,9 @@ class TestEvaluateCLI:
 
     def test_evaluate_with_hub_model_name_fails_nonexistent(self):
         """Test that --hub-model-name fails when repo doesn't exist."""
-        from wet_net.data.preprocess import DATA_DIR
+        from pathlib import Path
 
-        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        mock_data_path = Path("./data/processed/mock_preprocessed.parquet")
         # Ensure mock data exists
         if not mock_data_path.exists():
             runner.invoke(app, ["pre-process", "--mock"])
@@ -390,6 +413,8 @@ class TestEvaluateCLI:
                 str(mock_data_path),
                 "--hub-model-name",
                 "nonexistent-org/nonexistent-model-12345",
+                "--results-dir",
+                "./results",
             ],
         )
         assert result.exit_code == 1
@@ -398,9 +423,9 @@ class TestEvaluateCLI:
 
     def test_evaluate_with_both_local_and_hub_fails(self):
         """Test that specifying both --local-artifacts-path and --hub-model-name fails."""
-        from wet_net.data.preprocess import DATA_DIR
+        from pathlib import Path
 
-        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        mock_data_path = Path("./data/processed/mock_preprocessed.parquet")
         # Ensure mock data exists
         if not mock_data_path.exists():
             runner.invoke(app, ["pre-process", "--mock"])
@@ -419,7 +444,58 @@ class TestEvaluateCLI:
                 "/some/path",
                 "--hub-model-name",
                 "some-org/some-model",
+                "--results-dir",
+                "./results",
             ],
         )
         assert result.exit_code == 1
         assert "both" in result.stdout.lower() or "both" in result.stderr.lower()
+
+    def test_evaluate_default_uses_hub_when_local_missing(self, tmp_path_factory):
+        """Test that default evaluate behavior uses hub when local artifacts don't exist."""
+        from pathlib import Path
+
+        mock_data_path = Path("./data/processed/mock_preprocessed.parquet")
+        # Ensure mock data exists
+        if not mock_data_path.exists():
+            runner.invoke(app, ["pre-process", "--mock"])
+
+        # Use a temporary directory for results
+        tmp_results = tmp_path_factory.mktemp("results")
+        results_dir = str(tmp_results)
+
+        # Use a run_id that we know doesn't exist locally to ensure hub is used
+        # Using a unique run_id that won't conflict with other tests
+        run_id = "seq96_recall_hub_test"
+        local_training_dir = Path(results_dir) / "wetnet" / run_id
+        # Verify local doesn't exist (if it does, something is wrong)
+        assert not local_training_dir.exists(), f"Local directory {local_training_dir} should not exist for this test"
+
+        # Call evaluate without --local-artifacts-path or --hub-model-name
+        # This should trigger Priority 3: check local (not found), then fallback to hub
+        result = runner.invoke(
+            app,
+            [
+                "evaluate",
+                "--seq-len",
+                "96",
+                "--optimize-for",
+                "recall",
+                "--data-path",
+                str(mock_data_path),
+                "--run-suffix",
+                "_hub_test",
+                "--results-dir",
+                results_dir,
+            ],
+        )
+
+        # Should successfully download from hub - verify report shows hub source
+        assert result.exit_code == 0, f"Evaluate failed: {result.stdout}\n{result.stderr}"
+        assert "Report written to" in result.stdout
+        report_dir = Path(results_dir) / "wetnet" / "report" / run_id
+        report_path = report_dir / "report.md"
+        assert report_path.exists(), "Report file should be created"
+        report_content = report_path.read_text()
+        # Verify it used the default hub repo
+        assert "Hub: WetNet/wet-net (default)" in report_content

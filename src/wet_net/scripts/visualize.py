@@ -8,7 +8,6 @@ import seaborn as sns
 import typer
 
 from wet_net.data.preprocess import PROCESSED_PARQUET
-from wet_net.paths import DATA_DIR, RESULTS_DIR
 from wet_net.pipelines.tri_task import build_data_bundle
 
 app = typer.Typer(help="Lightweight dataset visualizations (e.g., class balance).")
@@ -18,7 +17,7 @@ def _resolve_preprocessed_path(data_path: str | None, mock: bool) -> Path:
     if data_path:
         return Path(data_path)
     if mock:
-        return DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        return Path("./data/processed/mock_preprocessed.parquet")
     return PROCESSED_PARQUET
 
 
@@ -89,7 +88,7 @@ def class_balance(
     bundle = build_data_bundle(preprocessed, seq_len, allow_mock_regen=mock)
     meta = _attach_split_labels(bundle.metadata, bundle.splits)
 
-    out_base = Path(out_dir) if out_dir else RESULTS_DIR / "plots"
+    out_base = Path(out_dir) if out_dir else Path("./results/plots")
     overall_path = out_base / f"class_balance_overall_seq{seq_len}.png"
     split_path = out_base / f"class_balance_splits_seq{seq_len}.png"
 

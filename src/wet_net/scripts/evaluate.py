@@ -64,6 +64,7 @@ app = typer.Typer()
 def ensure_artifacts(
     run_id: str,
     out_dir: Path,
+    results_dir: Path,
     local_artifacts_path: Path | None = None,
     hub_model_name: str | None = None,
 ) -> dict[str, Path]:
@@ -75,8 +76,6 @@ def ensure_artifacts(
     2. If hub_model_name is provided, download from HuggingFace Hub (fail if missing)
     3. Otherwise, check local training directory, then fallback to default hub repo
     """
-    from wet_net.paths import RESULTS_DIR
-
     out_dir.mkdir(parents=True, exist_ok=True)
     expected = {
         "model": out_dir / "wetnet.pt",
@@ -142,7 +141,7 @@ def ensure_artifacts(
         return expected
 
     # Priority 3: Check local training directory first, then fallback to default hub repo
-    local_training_dir = RESULTS_DIR / "wetnet" / run_id
+    local_training_dir = results_dir / "wetnet" / run_id
     local_artifacts = {
         "model": local_training_dir / "wetnet.pt",
         "vib": local_training_dir / "vib.pt",
@@ -301,6 +300,7 @@ def generate_report(
     optimize_for: str,
     data_path: Path,
     out_dir: Path,
+    results_dir: Path,
     run_suffix: str = "",
     seed: int = 42,
     local_artifacts_path: Path | None = None,
@@ -311,6 +311,7 @@ def generate_report(
     artifacts = ensure_artifacts(
         run_id=run_id,
         out_dir=out_dir,
+        results_dir=results_dir,
         local_artifacts_path=local_artifacts_path,
         hub_model_name=hub_model_name,
     )
@@ -430,6 +431,7 @@ def evaluate(
     optimize_for: str = typer.Option("recall", help="recall or false_alarm; matches saved config."),
     data_path: str | None = typer.Option(None, help="Preprocessed parquet path; defaults to processed output."),
     output_dir: str = typer.Option("./results/wetnet/report", help="Where to write report/plots."),
+    results_dir: str = typer.Option("./results", help="Directory where training results are stored."),
     run_suffix: str = typer.Option("", help="Suffix used during training (e.g., _fast) to locate artifacts."),
     seed: int = typer.Option(42, help="Random seed."),
     local_artifacts_path: str | None = typer.Option(
@@ -489,6 +491,10 @@ def evaluate(
             raise typer.Exit(code=1)
 
     local_artifacts_path_obj = Path(local_artifacts_path) if local_artifacts_path else None
+    results_dir_path = Path(results_dir)
+    # If output_dir is the default, construct it from results_dir to respect --results-dir
+    if output_dir == "./results/wetnet/report":
+        output_dir = str(results_dir_path / "wetnet" / "report")
     out_dir = Path(output_dir) / f"seq{seq_len}_{optimize_for}{run_suffix}"
     try:
         generate_report(
@@ -496,6 +502,7 @@ def evaluate(
             optimize_for=optimize_for,
             data_path=final_data_path,
             out_dir=out_dir,
+            results_dir=results_dir_path,
             run_suffix=run_suffix,
             seed=seed,
             local_artifacts_path=local_artifacts_path_obj,
