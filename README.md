@@ -35,7 +35,7 @@ uv sync --locked
 > - CUDA 12.8 (recommended for GPUs): `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128`
 
 ### HuggingFace token (only needed if you plan to push trained models)
-- Copy `.env.example` to `.env` and set `HF_TOKEN=<your_token>`.
+- Copy `.env.template` to `.env` and set `HF_TOKEN=<your_token>`.
 - Load and export: `source .env && uv run wet-net <command>`.
 - Alternative: `huggingface-cli login` (persists token).
 
