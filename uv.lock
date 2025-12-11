@@ -2741,7 +2741,7 @@ wheels = [
 
 [[package]]
 name = "wet-net"
-version = "0.5.0"
+version = "0.4.0b2"
 source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },
