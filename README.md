@@ -129,6 +129,36 @@ uv run wet-net evaluate --seq-len 48 --run-suffix _tiny --mock
 
 This matches the small notebook experiment and writes results to a separate directory to avoid overwriting production artifacts.
 
+### Full Training Pipeline (Production)
+
+⚠️ **Warning**: The following command trains models for ALL sequence lengths and BOTH optimization objectives. This is an extremely long-running process (potentially several days depending on hardware) and should only be run if you need comprehensive model coverage.
+
+```bash
+# Train complete set of models for all sequence lengths and objectives
+# This will take a very long time - ensure you have stable power and sufficient GPU resources
+for opt in recall false_alarm; do
+  for s in 48 96 192 360 720 1440; do
+    uv run wet-net train \
+      --seq-len $s \
+      --optimize-for $opt \
+      --min-anomaly-ratio 0.05 \
+      --early-stop-metric cls \
+      --recon-weight 0.3 \
+      --forecast-weight 0.5 \
+      --short-weight 2 \
+      --long-weight 2
+  done
+done
+```
+
+**Recommended approach**: Start with a single sequence length to test the pipeline:
+```bash
+# Test with just one sequence length first
+uv run wet-net train --seq-len 192 --optimize-for recall \
+  --min-anomaly-ratio 0.05 --early-stop-metric cls \
+  --recon-weight 0.3 --forecast-weight 0.5 --short-weight 2 --long-weight 2
+```
+
 ### HuggingFace Token Management
 
 The `hf-check` command helps you verify your HuggingFace authentication and repository access:
