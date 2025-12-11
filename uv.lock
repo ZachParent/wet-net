@@ -4,7 +4,22 @@ requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'darwin'",
     "python_full_version < '3.12' and sys_platform == 'darwin'",
+    "python_full_version >= '3.12' and sys_platform != 'darwin'",
+    "python_full_version < '3.12' and sys_platform != 'darwin'",
 ]
+required-markers = [
+    "platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'cpu' and extra != 'gpu'",
+    "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'cpu' and extra != 'gpu'",
+    "platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'cpu' and extra == 'gpu'",
+    "platform_machine == 'AMD64' and sys_platform == 'win32' and extra != 'cpu' and extra != 'gpu'",
+    "platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'cpu' and extra != 'gpu'",
+    "platform_machine == 'AMD64' and sys_platform == 'win32' and extra != 'cpu' and extra == 'gpu'",
+]
+conflicts = [[
+    { package = "wet-net", extra = "cpu" },
+    { package = "wet-net", extra = "gpu" },
+]]
 
 [[package]]
 name = "altair"
@@ -2740,8 +2755,9 @@ dependencies = [
     { name = "rich" },
     { name = "safetensors" },
     { name = "seaborn" },
-    { name = "torch" },
-    { name = "torchvision" },
+    { name = "torch", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin' or (extra == 'extra-7-wet-net-cpu' and extra == 'extra-7-wet-net-gpu') or (extra != 'extra-7-wet-net-cpu' and extra != 'extra-7-wet-net-gpu')" },
+    { name = "torch", version = "2.9.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-7-wet-net-cpu') or (extra == 'extra-7-wet-net-cpu' and extra == 'extra-7-wet-net-gpu')" },
+    { name = "torch", version = "2.9.1+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(sys_platform != 'darwin' and extra == 'extra-7-wet-net-gpu') or (extra == 'extra-7-wet-net-cpu' and extra == 'extra-7-wet-net-gpu')" },
     { name = "typer" },
     { name = "umap-learn" },
 ]
@@ -2779,8 +2795,12 @@ requires-dist = [
     { name = "rich", specifier = ">=13.9.2" },
     { name = "safetensors", specifier = ">=0.7.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
-    { name = "torch", specifier = ">=2.9.1" },
-    { name = "torchvision", specifier = ">=0.24.1" },
+    { name = "torch", marker = "sys_platform != 'darwin'", specifier = ">=2.9.1" },
+    { name = "torch", marker = "sys_platform == 'darwin'", specifier = ">=2.9.1", index = "https://pypi.org/simple" },
+    { name = "torch", marker = "sys_platform == 'darwin' and extra == 'cpu'", index = "https://pypi.org/simple" },
+    { name = "torch", marker = "sys_platform == 'darwin' and extra == 'gpu'", index = "https://pypi.org/simple" },
+    { name = "torch", marker = "sys_platform != 'darwin' and extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "wet-net", extra = "cpu" } },
+    { name = "torch", marker = "sys_platform != 'darwin' and extra == 'gpu'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "wet-net", extra = "gpu" } },
     { name = "typer", specifier = ">=0.19.2" },
     { name = "umap-learn", specifier = ">=0.5.7" },
 ]
