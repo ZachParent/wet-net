@@ -12,7 +12,6 @@ from rich.progress import (
     Progress,
     TextColumn,
     TimeElapsedColumn,
-    TimeRemainingColumn,
 )
 
 from wet_net.config.tri_task import (
@@ -48,14 +47,19 @@ from wet_net.training.utils import (
     batch_for_seq,
     intelligent_batch_size,
     max_samples_for_seq,
-    stride_for_seq,
     set_seed,
+    stride_for_seq,
 )
 
 console = Console()
 
 
-def build_data_bundle(preprocessed_path: Path, seq_len: int, allow_mock_regen: bool = False) -> DataBundle:
+def build_data_bundle(
+    preprocessed_path: Path,
+    seq_len: int,
+    allow_mock_regen: bool = False,
+    min_anomaly_ratio: float = 0.0,
+) -> DataBundle:
     df = load_preprocessed_dataframe(preprocessed_path)
     # If mock data is too short, regenerate a larger mock dataset
     if allow_mock_regen and len(df) < seq_len + FORECAST_HORIZON + 1:
@@ -86,7 +90,7 @@ def build_data_bundle(preprocessed_path: Path, seq_len: int, allow_mock_regen: b
     tri_dataset = TriTaskWindowDataset(base_dataset, future_targets)
     metadata = build_metadata(base_dataset, anchor_times, policy_marks, HORIZONS)
     splits = build_policy_split(metadata, (TRAIN_RATIO, VAL_RATIO, TEST_RATIO))
-    ensure_anomaly_coverage(metadata, splits)
+    ensure_anomaly_coverage(metadata, splits, min_ratio=min_anomaly_ratio)
     batch_size = intelligent_batch_size(seq_len, len(feature_cols), base_batch, d_model_guess=256)
     loaders = make_dataloaders(tri_dataset, splits, batch_size)
     return DataBundle(df=df, dataset=tri_dataset, metadata=metadata, splits=splits, loaders=loaders)
@@ -100,10 +104,18 @@ def train_wetnet(
     vib_cfg_overrides: dict | None = None,
     mock: bool = False,
     seed: int | None = None,
+    fast_epochs: int | None = None,
+    run_suffix: str = "",
+    early_stop: bool = True,
+    min_delta_abs: float = 1e-4,
+    min_delta_rel: float = 0.0,
+    min_anomaly_ratio: float = 0.0,
+    task_weights: dict[str, float] | None = None,
+    monitor: str = "total",
 ) -> dict[str, Path]:
     set_seed(seed)
     cfg = get_best_config(seq_len, optimize_for)
-    bundle = build_data_bundle(preprocessed_path, seq_len, allow_mock_regen=mock)
+    bundle = build_data_bundle(preprocessed_path, seq_len, allow_mock_regen=mock, min_anomaly_ratio=min_anomaly_ratio)
     feature_cols = select_feature_columns(bundle.df)
     short_cols = [0, 1]
     long_cols = [2, 3]
@@ -123,54 +135,79 @@ def train_wetnet(
     ).to(device)
 
     stages = build_training_stages(cfg.schedule_variant, cfg.pcgrad)
+
+    # Apply fast-mode overrides (env or CLI)
+    fast_cap = fast_epochs
     fast_env = os.getenv("WETNET_FAST")
-    if fast_env:
+    if fast_cap is None and fast_env:
         try:
-            fast_epochs = int(fast_env)
+            fast_cap = int(fast_env)
         except ValueError:
-            fast_epochs = 2
+            fast_cap = 2
+    if fast_cap is not None:
         for st in stages:
-            st["epochs"] = min(st["epochs"], fast_epochs)
-            st["patience"] = min(st.get("patience", st["epochs"]), max(1, fast_epochs // 2))
+            st["epochs"] = min(st["epochs"], fast_cap)
+            st["patience"] = min(st.get("patience", st["epochs"]), max(1, fast_cap // 2))
+            st["min_epochs"] = max(1, min(st.get("min_epochs", st["epochs"]), fast_cap // 2))
     if mock:
         for st in stages:
             st["epochs"] = min(2, st["epochs"])
             st["patience"] = 1
     total_epochs = sum(s["epochs"] for s in stages)
+    split_summary = None
+    try:
+        from wet_net.data.datasets import summarize_splits
+
+        split_summary = summarize_splits(bundle.metadata, bundle.splits)
+    except ImportError:
+        # Optional summarize_splits function not available
+        split_summary = None
     console.print(
         f"[bold cyan]Training plan[/bold cyan] seq_len={seq_len}, optimize_for={optimize_for} "
         f"(schedule={cfg.schedule_variant}, pcgrad={'on' if cfg.pcgrad else 'off'})"
     )
     console.print(f"Total stages={len(stages)}, total epochs={total_epochs}")
+    if split_summary is not None:
+        console.print("[bold]Split anomaly ratios[/bold]")
+        for _, row in split_summary.iterrows():
+            console.print(
+                f"  {row['split']}: samples={row['samples']}, policies={row['policies']}, "
+                f"anomaly_ratio={row['anomaly_ratio']:.4f}"
+            )
     for idx, st in enumerate(stages, 1):
-        tasks = ", ".join(st["tasks"]) if st.get("tasks") else "none"
         patience = st.get("patience", st["epochs"])
         console.print(
-            f"  {idx}. {st['name']}: {st['epochs']} ep, lr={st['lr']}, tasks=[{tasks}], "
+            f"  {idx}. {st['name']}: {st['epochs']} ep, lr={st['lr']}, "
             f"patience={patience}, pcgrad={'on' if st['pcgrad'] else 'off'}"
         )
-    stage_prefix = f"Train seq{seq_len} ({optimize_for}) -> "
-    with Progress(
-        TextColumn("[cyan]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total} ep"),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task(f"Train seq{seq_len} ({optimize_for})", total=total_epochs)
-        history = train_staged_model(
-            model,
-            bundle.loaders,
-            stages,
-            pos_weight_short,
-            pos_weight_long,
-            device,
-            progress=progress,
-            progress_task=task,
-            stage_prefix=stage_prefix,
-        )
+    history = train_staged_model(
+        model,
+        bundle.loaders,
+        stages,
+        pos_weight_short,
+        pos_weight_long,
+        device,
+        early_stop=early_stop,
+        min_delta_abs=min_delta_abs,
+        min_delta_rel=min_delta_rel,
+        task_weights=task_weights,
+        monitor=monitor,
+    )
+
+    # Summarise how many epochs actually ran per stage (helps spot early stopping)
+    epochs_ran: dict[str, int] = {}
+    for row in history:
+        stage = row["stage"]
+        epochs_ran[stage] = max(epochs_ran.get(stage, -1), row["epoch"])
+    if epochs_ran:
+        console.print("[bold green]Stage completion summary[/bold green]")
+        for st in stages:
+            planned = st["epochs"]
+            ran = epochs_ran.get(st["name"], -1) + 1
+            note = "" if early_stop else " (early-stop disabled)"
+            if ran < planned and early_stop:
+                note = f" (stopped early at {ran}/{planned})"
+            console.print(f"  {st['name']}: {ran} / {planned}{note}")
 
     vib_base = {
         "seq_len": seq_len,
@@ -182,14 +219,21 @@ def train_wetnet(
         "epochs": 40,
         "steps_per_epoch": 80,
         "cls_weight": 2.0,
-        "beta": 1e-3,
+        "beta": 7.5e-4,
     }
     if vib_cfg_overrides:
         vib_base.update(vib_cfg_overrides)
+    if fast_cap is not None:
+        vib_base["epochs"] = min(vib_base["epochs"], max(2, fast_cap))
+        vib_base["steps_per_epoch"] = min(vib_base["steps_per_epoch"], max(5, fast_cap * 5))
     if mock:
         vib_base["epochs"] = min(5, vib_base["epochs"])
         vib_base["steps_per_epoch"] = min(10, vib_base["steps_per_epoch"])
 
+    console.print(
+        f"[bold cyan]VIB training[/bold cyan] epochs={vib_base['epochs']}, "
+        f"steps/epoch={vib_base['steps_per_epoch']}, beta={vib_base['beta']}"
+    )
     vib_model = VIBTransformer(
         input_dim=len(feature_cols),
         seq_len=seq_len,
@@ -200,38 +244,49 @@ def train_wetnet(
         layers=vib_base["layers"],
     ).to(device)
 
-    # quick probe training
+    # quick probe training (keep lightweight; mirrors notebook defaults)
     balanced_loader = make_balanced_loader(
         bundle.dataset, bundle.splits["train"], batch_size=bundle.loaders["train"].batch_size
     )
     optimizer = torch.optim.AdamW(vib_model.parameters(), lr=1e-3)
     iterator = iter(balanced_loader)
     vib_model.train()
-    for epoch in range(vib_base["epochs"]):
-        total = 0.0
-        for _ in range(vib_base["steps_per_epoch"]):
-            try:
-                seq, targets, _ = next(iterator)
-            except StopIteration:
-                iterator = iter(balanced_loader)
-                seq, targets, _ = next(iterator)
-            seq = seq.to(device)
-            labels = targets[:, 0:1].to(device)
-            recon, logits, c_mu, c_logvar, s_mu, s_logvar = vib_model(seq)
-            loss_rec = torch.nn.functional.mse_loss(recon, seq)
-            loss_cls = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels)
-            kl_c = -0.5 * torch.mean(1 + c_logvar - c_mu.pow(2) - c_logvar.exp())
-            kl_s = -0.5 * torch.mean(1 + s_logvar - s_mu.pow(2) - s_logvar.exp())
-            loss = loss_rec + vib_base["cls_weight"] * loss_cls + vib_base["beta"] * (kl_c + kl_s)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            total += loss.item()
-        if epoch % 5 == 0 or epoch == vib_base["epochs"] - 1:
-            _ = total / vib_base["steps_per_epoch"]
+    with Progress(
+        TextColumn("[magenta]VIB {task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total} ep"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as vib_progress:
+        vib_task = vib_progress.add_task("training", total=vib_base["epochs"])
+        for epoch in range(vib_base["epochs"]):
+            total = 0.0
+            for _ in range(vib_base["steps_per_epoch"]):
+                try:
+                    seq, targets, _ = next(iterator)
+                except StopIteration:
+                    iterator = iter(balanced_loader)
+                    seq, targets, _ = next(iterator)
+                seq = seq.to(device)
+                labels = targets[:, 0:1].to(device)
+                recon, logits, c_mu, c_logvar, s_mu, s_logvar = vib_model(seq)
+                loss_rec = torch.nn.functional.mse_loss(recon, seq)
+                loss_cls = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels)
+                kl_c = -0.5 * torch.mean(1 + c_logvar - c_mu.pow(2) - c_logvar.exp())
+                kl_s = -0.5 * torch.mean(1 + s_logvar - s_mu.pow(2) - s_logvar.exp())
+                loss = loss_rec + vib_base["cls_weight"] * loss_cls + vib_base["beta"] * (kl_c + kl_s)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total += loss.item()
+            if epoch % 5 == 0 or epoch == vib_base["epochs"] - 1:
+                avg_loss = total / vib_base["steps_per_epoch"]
+                console.log(f"VIB epoch {epoch+1}/{vib_base['epochs']} | loss={avg_loss:.4f}")
+            vib_progress.advance(vib_task, 1)
 
     artifacts: dict[str, Path] = {}
-    run_id = f"seq{seq_len}_{optimize_for}"
+    run_id = f"seq{seq_len}_{optimize_for}{run_suffix}"
     out_dir = RESULTS_DIR / "wetnet" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "wetnet.pt"

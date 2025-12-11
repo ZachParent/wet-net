@@ -14,8 +14,8 @@ Features:
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import matplotlib
 
@@ -26,7 +26,7 @@ import pandas as pd
 import seaborn as sns
 import torch
 import typer
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import snapshot_download
 
 from wet_net.config.tri_task import HORIZONS, METRIC_THRESHOLDS, SEQ_LENGTHS, get_best_config
 from wet_net.data.datasets import (
@@ -34,7 +34,6 @@ from wet_net.data.datasets import (
     TriTaskWindowDataset,
     build_metadata,
     build_policy_split,
-    compute_class_weights,
     compute_future_sequences,
     ensure_anomaly_coverage,
     make_dataloaders,
@@ -80,7 +79,7 @@ def ensure_artifacts(repo_id: str, run_id: str, out_dir: Path) -> dict[str, Path
             allow_patterns=["wetnet.pt", "vib.pt", "config.json", "metrics.csv", "augmented_metrics.csv"],
         )
     )
-    for name, path in expected.items():
+    for _name, path in expected.items():
         src = snapshot_dir / path.name
         if not src.exists():
             raise FileNotFoundError(f"{path.name} not found in repo {repo_id}")
@@ -169,7 +168,7 @@ def plot_forecast_example(preds: dict, df_meta: pd.DataFrame, out_dir: Path) -> 
     if "forecast" not in preds or preds["forecast"].size == 0:
         return None
     forecast = preds["forecast"][0]
-    future = preds.get("future", None)
+    future = preds.get("future")
     if forecast.ndim > 1:
         forecast = np.squeeze(forecast)
     if future is not None:
@@ -202,10 +201,11 @@ def generate_report(
     repo_id: str,
     data_path: Path,
     out_dir: Path,
+    run_suffix: str = "",
     seed: int = 42,
 ):
     set_seed(seed)
-    run_id = f"seq{seq_len}_{optimize_for}"
+    run_id = f"seq{seq_len}_{optimize_for}{run_suffix}"
     artifacts = ensure_artifacts(repo_id, run_id, out_dir)
 
     cfg = get_best_config(seq_len, optimize_for)
@@ -213,8 +213,6 @@ def generate_report(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     short_cols, long_cols = [0, 1], [2, 3]
-    pos_weight_short = compute_class_weights(tri_dataset.base.targets, short_cols)
-    pos_weight_long = compute_class_weights(tri_dataset.base.targets, long_cols)
 
     model = WetNet(
         input_dim=len(feature_cols),
@@ -322,6 +320,7 @@ def evaluate(
     data_dir: str = typer.Option("./data/processed", help="Directory containing preprocessed parquet."),
     preprocessed_name: str = typer.Option("anomalous_consumption_preprocessed.parquet", help="Parquet filename."),
     output_dir: str = typer.Option("./results/wetnet/report", help="Where to write report/plots."),
+    run_suffix: str = typer.Option("", help="Suffix used during training (e.g., _fast) to locate artifacts."),
     seed: int = typer.Option(42, help="Random seed."),
 ):
     """
@@ -332,10 +331,13 @@ def evaluate(
         raise typer.Exit(code=1)
     data_path = Path(data_dir) / preprocessed_name
     if not data_path.exists():
-        typer.secho(f"Preprocessed parquet not found at {data_path}. Run `wet-net pre-process` first.", fg=typer.colors.RED)
+        typer.secho(
+            f"Preprocessed parquet not found at {data_path}. Run `wet-net pre-process` first.",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1)
-    out_dir = Path(output_dir) / f"seq{seq_len}_{optimize_for}"
-    generate_report(seq_len, optimize_for, repo_id, data_path, out_dir, seed=seed)
+    out_dir = Path(output_dir) / f"seq{seq_len}_{optimize_for}{run_suffix}"
+    generate_report(seq_len, optimize_for, repo_id, data_path, out_dir, run_suffix=run_suffix, seed=seed)
 
 
 if __name__ == "__main__":

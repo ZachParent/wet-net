@@ -217,17 +217,37 @@ def build_policy_split(meta_df: pd.DataFrame, ratios: tuple[float, float, float]
     return splits
 
 
-def ensure_anomaly_coverage(meta_df: pd.DataFrame, splits: dict[str, list[int]]) -> None:
+def ensure_anomaly_coverage(
+    meta_df: pd.DataFrame, splits: dict[str, list[int]], min_ratio: float = 0.0, max_transfer: int | None = None
+) -> None:
+    """
+    Guarantee each non-train split has anomalies.
+    min_ratio: minimum fraction of samples in each target split that should be anomalous.
+    max_transfer: hard cap of how many anomalous samples can be pulled from train overall.
+    """
     if meta_df["any_anomaly"].sum() == 0:
         return
+    anomaly_pool = [idx for idx in splits["train"] if meta_df.loc[idx, "any_anomaly"] == 1]
+    transferred = 0
     for target in ("val", "test"):
-        subset = meta_df.loc[splits[target]] if splits[target] else pd.DataFrame(columns=meta_df.columns)
-        if not subset.empty and subset["any_anomaly"].sum() > 0:
+        target_idxs = splits[target]
+        target_anoms = [i for i in target_idxs if meta_df.loc[i, "any_anomaly"] == 1]
+        desired = int(np.ceil(min_ratio * len(target_idxs))) if min_ratio > 0 else 0
+        needed = max(0, desired - len(target_anoms))
+        if len(target_anoms) == 0:
+            needed = max(1, needed)  # at least one anomaly
+        if max_transfer is not None:
+            remaining = max(0, max_transfer - transferred)
+            needed = min(needed, remaining)
+        if needed <= 0 or not anomaly_pool:
             continue
-        donor = next((idx for idx in splits["train"] if meta_df.loc[idx, "any_anomaly"] == 1), None)
-        if donor is not None:
-            splits["train"].remove(donor)
-            splits[target].append(donor)
+        take = min(needed, len(anomaly_pool))
+        donate = anomaly_pool[:take]
+        anomaly_pool = anomaly_pool[take:]
+        transferred += take
+        for idx in donate:
+            splits["train"].remove(idx)
+            splits[target].append(idx)
 
 
 def summarize_splits(meta_df: pd.DataFrame, splits: dict[str, list[int]]) -> pd.DataFrame:

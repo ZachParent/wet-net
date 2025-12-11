@@ -84,6 +84,8 @@ def create_mock_dataset(out_path: Path = MOCK_PARQUET, days: int = 30, seed: int
 def robust_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
     """
     Preprocess time series data with feature engineering.
+    This is a line-for-line twin of the notebook's implementation
+    (mai_bda.data.preprocessing.robust_preprocessing).
     """
     data = df.copy()
 
@@ -114,7 +116,7 @@ def robust_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
         data["is_missing"] = data["CONSUMO_REAL"].isna().astype(np.float32)
         data["CONSUMO_REAL"] = (
             data.groupby("POLISSA_SUBM")["CONSUMO_REAL"]
-            .transform(lambda g: g.interpolate(limit=5, limit_direction="both"))
+            .transform(lambda g: g.interpolate(method="linear", limit=5, limit_direction="both"))
             .fillna(0.0)
         )
         mean = data["CONSUMO_REAL"].mean()
@@ -134,14 +136,57 @@ def robust_preprocessing(df: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
-def load_preprocessed_dataframe(path: Path | str = PROCESSED_PARQUET) -> pd.DataFrame:
+def load_preprocessed_dataframe(
+    path: Path | str = PROCESSED_PARQUET,
+    *,
+    force_reprocess: bool = False,
+    use_cache: bool = True,
+    data_url: str | None = None,
+    mock: bool = False,
+) -> pd.DataFrame:
+    """
+    Load (or build) the preprocessed parquet.
+
+    - If `force_reprocess` is True, always re-run preprocessing from raw.
+    - If `use_cache` is True and the processed file exists, reuse it.
+    - Otherwise, rebuild from raw (downloading if needed).
+    """
     path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Expected preprocessed parquet at {path}. Run `wet-net pre-process` first.")
-    return pd.read_parquet(path)
+    raw_path = MOCK_PARQUET if mock else RAW_PARQUET
+
+    def _ensure_raw():
+        if raw_path.exists():
+            return
+        if mock:
+            create_mock_dataset(raw_path)
+        else:
+            if not data_url:
+                raise FileNotFoundError(
+                    f"Raw dataset not found at {raw_path} and no data_url provided. "
+                    "Pass --data-url or set WETNET_DATA_URL."
+                )
+            output_path = raw_path if not str(data_url).lower().endswith(".zip") else raw_path.with_suffix(".zip")
+            download_file(data_url, output_path)
+
+    # Use cache if allowed and present
+    if use_cache and path.exists() and not force_reprocess:
+        return pd.read_parquet(path)
+
+    _ensure_raw()
+    df_raw = pd.read_parquet(raw_path)
+    df_proc = robust_preprocessing(df_raw)
+    if use_cache:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df_proc.to_parquet(path, index=False)
+    return df_proc
 
 
-def prepare_dataset(mock: bool = False, data_url: str | None = None, force_mock_regen: bool = False) -> Path:
+def prepare_dataset(
+    mock: bool = False,
+    data_url: str | None = None,
+    force_mock_regen: bool = False,
+    force_reprocess: bool = False,
+) -> Path:
     """
     Ensure a parquet is available and preprocessed.
     """
@@ -177,6 +222,9 @@ def prepare_dataset(mock: bool = False, data_url: str | None = None, force_mock_
                     extracted_path.rename(raw_path)
             else:
                 download_file(data_url, raw_path)
+
+    if processed_path.exists() and not force_reprocess:
+        return processed_path
 
     df_raw = pd.read_parquet(raw_path)
     df_proc = robust_preprocessing(df_raw)

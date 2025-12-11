@@ -31,6 +31,39 @@ def train(
     push_model_only: bool = typer.Option(
         False, help="When pushing to hub, upload only wetnet.pt (skip VIB/config/metrics)."
     ),
+    fast: bool = typer.Option(False, help="Enable fast mode: cap stage/VIB epochs for quick iteration."),
+    max_epochs: int | None = typer.Option(
+        None,
+        help="Optional hard cap on epochs per stage (overrides fast default). Use small number (e.g., 2).",
+    ),
+    no_early_stop: bool = typer.Option(
+        False, help="Run full planned epochs per stage (match notebook), disable early stopping."
+    ),
+    min_delta_abs: float = typer.Option(
+        1e-4,
+        help="Absolute improvement required to reset patience (avoid tiny val losses triggering early stop).",
+    ),
+    min_delta_rel: float = typer.Option(
+        0.0,
+        help="Relative improvement (fraction of best val loss) required to reset patience.",
+    ),
+    min_anomaly_ratio: float = typer.Option(
+        0.0,
+        help="Minimum anomaly fraction enforced in val/test splits (0.0 keeps current behavior; e.g., 0.05 = 5%).",
+    ),
+    recon_weight: float = typer.Option(1.0, help="Loss weight for reconstruction task."),
+    forecast_weight: float = typer.Option(0.6, help="Loss weight for forecast task."),
+    short_weight: float = typer.Option(1.2, help="Loss weight for short-horizon anomaly task."),
+    long_weight: float = typer.Option(1.2, help="Loss weight for long-horizon anomaly task."),
+    early_stop_metric: str = typer.Option(
+        "total",
+        help="Metric to monitor for early stopping: total (all losses) or cls (classification heads only).",
+        case_sensitive=False,
+    ),
+    run_suffix: str = typer.Option(
+        "",
+        help="Optional suffix for run directory (e.g., _fast) to avoid overwriting full runs.",
+    ),
 ):
     """
     Train WetNet with the cached best configuration (no grid search).
@@ -40,7 +73,8 @@ def train(
         raise typer.Exit(code=1)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     upload_to_hub = push_to_hub or upload_only
-    run_id = f"seq{seq_len}_{optimize_for}"
+    suffix = run_suffix or ("_fast" if fast or max_epochs else "")
+    run_id = f"seq{seq_len}_{optimize_for}{suffix}"
     base_dir = Path("results/wetnet") / run_id
 
     # If user only wants to push the existing model, skip training when artifact is present.
@@ -60,6 +94,17 @@ def train(
             )
 
     artifacts = None
+    task_weights = {
+        "reconstruction": recon_weight,
+        "forecast": forecast_weight,
+        "short": short_weight,
+        "long": long_weight,
+    }
+    monitor = early_stop_metric.lower()
+    if monitor not in {"total", "cls"}:
+        typer.secho("early_stop_metric must be one of: total, cls", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
     if not upload_only:
         # Locate preprocessed parquet only when training is needed.
         candidates = []
@@ -101,6 +146,14 @@ def train(
             device=device,
             mock=mock,
             seed=seed,
+            fast_epochs=(max_epochs if max_epochs is not None else (2 if fast else None)),
+            run_suffix=suffix,
+            early_stop=not no_early_stop,
+            min_delta_abs=min_delta_abs,
+            min_delta_rel=min_delta_rel,
+            min_anomaly_ratio=min_anomaly_ratio,
+            task_weights=task_weights,
+            monitor=monitor,
         )
         typer.secho(f"Training complete. Saved artifacts to {artifacts['model'].parent}", fg=typer.colors.GREEN)
         if local_model_path:
@@ -122,7 +175,7 @@ def train(
         repo_id = hub_model_name
         typer.secho(f"Pushing artifacts to Hugging Face repo {repo_id} ...", fg=typer.colors.YELLOW)
         api.create_repo(repo_id=repo_id, exist_ok=True)
-        run_prefix = f"seq{seq_len}_{optimize_for}"
+        run_prefix = f"seq{seq_len}_{optimize_for}{suffix}"
         keys_to_push = ["model"] if push_model_only else ["model", "vib", "config", "metrics", "augmented_metrics"]
         for key in keys_to_push:
             path = artifacts.get(key)

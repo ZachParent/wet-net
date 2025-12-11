@@ -1,11 +1,19 @@
 recall:
+  "48":
+    d_model: 64
+    n_layers: 2
+    n_heads: 4
+    dropout: 0.15
+    schedule_variant: baseline
+    pcgrad: false
+    threshold: 0.4
   "96":
     d_model: 160
     n_layers: 4
     n_heads: 8
     dropout: 0.05
     schedule_variant: extended
-    pcgrad: true
+    pcgrad: false
     threshold: 0.4
   "192":
     d_model: 160
@@ -41,6 +49,14 @@ recall:
     threshold: 0.4
 
 false_alarm:
+  "48":
+    d_model: 64
+    n_layers: 2
+    n_heads: 4
+    dropout: 0.15
+    schedule_variant: baseline
+    pcgrad: false
+    threshold: 0.7
   "96":
     d_model: 160
     n_layers: 4
@@ -55,7 +71,7 @@ false_alarm:
     n_heads: 8
     dropout: 0.05
     schedule_variant: extended
-    pcgrad: true
+    pcgrad: false
     threshold: 0.7
   "360":
     d_model: 160
@@ -66,12 +82,12 @@ false_alarm:
     pcgrad: true
     threshold: 0.7
   "720":
-    d_model: 96
-    n_layers: 3
-    n_heads: 4
-    dropout: 0.2
+    d_model: 160
+    n_layers: 4
+    n_heads: 8
+    dropout: 0.05
     schedule_variant: extended
-    pcgrad: true
+    pcgrad: false
     threshold: 0.7
   "1440":
     d_model: 96

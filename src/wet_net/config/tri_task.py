@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-SEQ_LENGTHS = [96, 192, 360, 720, 1440]
+SEQ_LENGTHS = [48, 96, 192, 360, 720, 1440]
 HORIZONS = [24, 48, 168, 336]
 FORECAST_HORIZON = 24
 TRAIN_RATIO, VAL_RATIO, TEST_RATIO = 0.70, 0.15, 0.15
@@ -31,6 +31,7 @@ class ModelConfig:
 # Derived from the original grid + augmented metrics (best across thresholds)
 BEST_CONFIGS: dict[str, dict[int, ModelConfig]] = {
     "recall": {
+        48: ModelConfig(64, 2, 4, 0.15, "baseline", False, 0.4),
         96: ModelConfig(160, 4, 8, 0.05, "extended", True, 0.4),
         192: ModelConfig(160, 4, 8, 0.05, "extended", False, 0.4),
         360: ModelConfig(160, 4, 8, 0.05, "extended", True, 0.4),
@@ -38,6 +39,7 @@ BEST_CONFIGS: dict[str, dict[int, ModelConfig]] = {
         1440: ModelConfig(96, 3, 4, 0.2, "baseline", False, 0.4),
     },
     "false_alarm": {
+        48: ModelConfig(64, 2, 4, 0.15, "baseline", False, 0.7),
         96: ModelConfig(160, 4, 8, 0.05, "extended", False, 0.7),
         192: ModelConfig(160, 4, 8, 0.05, "extended", True, 0.7),
         360: ModelConfig(160, 4, 8, 0.05, "extended", True, 0.7),

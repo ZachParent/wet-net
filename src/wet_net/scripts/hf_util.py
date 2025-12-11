@@ -85,7 +85,8 @@ def hf_check(
     # Validate that a token was found; exit early if not
     if token is None:
         checked = [env_var] if env_var else ["HF_TOKEN", "HUGGINGFACE_HUB_TOKEN"]
-        typer.secho(f"❌ No HF token found. Checked env vars: {', '.join(n for n in checked if n)}", fg=typer.colors.RED)
+        checked_names = ', '.join(n for n in checked if n)
+        typer.secho(f"❌ No HF token found. Checked env vars: {checked_names}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
     # Initialize HuggingFace API client with the located token
@@ -141,14 +142,17 @@ def hf_check(
             typer.echo(f"   Repo visibility: {visibility}")
     except HfHubHTTPError as e:
         typer.secho(f"   ❌ Cannot read repo '{repo_id}': {e}", fg=typer.colors.RED)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     # --- Infer repository permissions (best-effort analysis) ---
     # Note: Full permission details require admin access and are not always exposed via API
     typer.secho("\n🔐 Inferred permissions (best-effort):", fg=typer.colors.CYAN)
     if username and repo_owner == username:
         # User owns the repository directly
-        typer.secho("   • You are the *owner* of this repo → you have full read/write permissions.", fg=typer.colors.GREEN)
+        typer.secho(
+            "   • You are the *owner* of this repo → you have full read/write permissions.",
+            fg=typer.colors.GREEN,
+        )
     elif org_role_for_owner:
         # User is a member of the organization that owns the repository
         typer.echo(
