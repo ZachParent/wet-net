@@ -67,21 +67,44 @@ PY
 ```
 Make sure `HUGGINGFACE_TOKEN` is set in your environment before running the upload step.
 
+## Quick Start
+
+### 1. Try it out immediately (no setup required)
+
+```bash
+# Install and run the CLI directly from PyPI
+uvx wet-net --help
+
+# Run a complete training pipeline with mock data
+uvx wet-net pre-process --mock && uvx wet-net train --seq-len 48 --fast --mock
+```
+
+### 2. Full local setup for development
+
+```bash
+# Clone and set up the development environment
+git clone https://github.com/ZachParent/wet-net.git
+cd wet-net
+uv sync --locked
+```
+
 ## Usage
 
 ### Run the scripts
 
-The CLI entry points are unchanged, now targeting the WetNet tri-task pipeline (no grid search; cached best configs per sequence length):
+The CLI entry points target the WetNet tri-task pipeline with cached best configs per sequence length:
 
 ```bash
 # Generate data (real: pass your private URL; mock: bundled synthetic)
-# Accepts a parquet URL or the official challenge zip URL
-uv run wet-net pre-process --data-url https://<your-parquet-or-zip-url>   # real
-uv run wet-net pre-process --mock                                         # synthetic
+uv run wet-net pre-process --data-url https://<your-parquet-or-zip-url>   # real data
+uv run wet-net pre-process --mock                                         # synthetic data
 
-# Train (picks the best recall/false_alarm config for that seq_len)
+# Train with production settings
 uv run wet-net train --seq-len 192 --optimize-for recall
-uv run wet-net train --seq-len 192 --optimize-for false_alarm --mock
+uv run wet-net train --seq-len 192 --optimize-for false_alarm
+
+# Train with fast settings for testing (use --fast and --mock)
+uv run wet-net train --seq-len 48 --fast --mock --run-suffix _test
 
 # Optional: push trained artifacts to Hugging Face (requires .env sourced)
 source .env && uv run wet-net train --seq-len 96 --optimize-for recall --push-to-hub --hub-model-name WetNet/wet-net
@@ -92,6 +115,19 @@ source .env && uv run wet-net train --seq-len 96 --optimize-for recall --push-to
 # Evaluate saved checkpoints (no retraining)
 uv run wet-net evaluate --seq-len 192 --optimize-for recall
 ```
+
+### Development and Testing
+
+For rapid development and testing, use the fast settings that mirror the mini notebook experiment:
+
+```bash
+# Complete development workflow with tiny experiment
+uv run wet-net pre-process --mock
+uv run wet-net train --seq-len 48 --fast --mock --max-epochs 2 --run-suffix _tiny
+uv run wet-net evaluate --seq-len 48 --run-suffix _tiny --mock
+```
+
+This matches the small notebook experiment and writes results to a separate directory to avoid overwriting production artifacts.
 
 ### HuggingFace Token Management
 
