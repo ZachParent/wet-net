@@ -35,4 +35,4 @@ dist/
 # trained models
 *.pt
 
-results/*.csv
+results/
