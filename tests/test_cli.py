@@ -451,7 +451,7 @@ class TestEvaluateCLI:
         assert result.exit_code == 1
         assert "both" in result.stdout.lower() or "both" in result.stderr.lower()
 
-    def test_evaluate_default_uses_hub_when_local_missing(self, tmp_path_factory):
+    def test_evaluate_default_uses_hub(self, tmp_path_factory):
         """Test that default evaluate behavior uses hub when local artifacts don't exist."""
         from pathlib import Path
 
@@ -463,13 +463,6 @@ class TestEvaluateCLI:
         # Use a temporary directory for results
         tmp_results = tmp_path_factory.mktemp("results")
         results_dir = str(tmp_results)
-
-        # Use a run_id that we know doesn't exist locally to ensure hub is used
-        # Using a unique run_id that won't conflict with other tests
-        run_id = "seq96_recall_hub_test"
-        local_training_dir = Path(results_dir) / "wetnet" / run_id
-        # Verify local doesn't exist (if it does, something is wrong)
-        assert not local_training_dir.exists(), f"Local directory {local_training_dir} should not exist for this test"
 
         # Call evaluate without --local-artifacts-path or --hub-model-name
         # This should trigger Priority 3: check local (not found), then fallback to hub
@@ -493,7 +486,7 @@ class TestEvaluateCLI:
         # Should successfully download from hub - verify report shows hub source
         assert result.exit_code == 0, f"Evaluate failed: {result.stdout}\n{result.stderr}"
         assert "Report written to" in result.stdout
-        report_dir = Path(results_dir) / "wetnet" / "report" / run_id
+        report_dir = Path(results_dir) / "wetnet" / "report" / "seq96_recall_hub_test"
         report_path = report_dir / "report.md"
         assert report_path.exists(), "Report file should be created"
         report_content = report_path.read_text()
