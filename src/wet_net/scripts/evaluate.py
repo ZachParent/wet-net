@@ -317,8 +317,7 @@ def evaluate(
     seq_len: int = typer.Option(96, help="Sequence length used during training."),
     optimize_for: str = typer.Option("recall", help="recall or false_alarm; matches saved config."),
     repo_id: str = typer.Option("WetNet/wet-net", help="Hugging Face repo to pull artifacts from."),
-    data_dir: str = typer.Option("./data/processed", help="Directory containing preprocessed parquet."),
-    preprocessed_name: str = typer.Option("anomalous_consumption_preprocessed.parquet", help="Parquet filename."),
+    data_path: str | None = typer.Option(None, help="Preprocessed parquet path; defaults to processed output."),
     output_dir: str = typer.Option("./results/wetnet/report", help="Where to write report/plots."),
     run_suffix: str = typer.Option("", help="Suffix used during training (e.g., _fast) to locate artifacts."),
     seed: int = typer.Option(42, help="Random seed."),
@@ -329,15 +328,31 @@ def evaluate(
     if seq_len not in SEQ_LENGTHS:
         typer.secho(f"seq_len must be one of {SEQ_LENGTHS}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
-    data_path = Path(data_dir) / preprocessed_name
-    if not data_path.exists():
-        typer.secho(
-            f"Preprocessed parquet not found at {data_path}. Run `wet-net pre-process` first.",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(code=1)
+
+    # If data_path is explicitly provided, it must exist (no fallback).
+    if data_path:
+        data_path_obj = Path(data_path)
+        if not data_path_obj.exists():
+            typer.secho(
+                f"Preprocessed parquet not found at {data_path_obj}. Run `wet-net pre-process` first.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=1)
+        final_data_path = data_path_obj
+    else:
+        # Fallback to default processed parquet location
+        from wet_net.data.preprocess import PROCESSED_PARQUET
+
+        final_data_path = PROCESSED_PARQUET
+        if not final_data_path.exists():
+            typer.secho(
+                f"Preprocessed parquet not found at {final_data_path}. Run `wet-net pre-process` first.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=1)
+
     out_dir = Path(output_dir) / f"seq{seq_len}_{optimize_for}{run_suffix}"
-    generate_report(seq_len, optimize_for, repo_id, data_path, out_dir, run_suffix=run_suffix, seed=seed)
+    generate_report(seq_len, optimize_for, repo_id, final_data_path, out_dir, run_suffix=run_suffix, seed=seed)
 
 
 if __name__ == "__main__":

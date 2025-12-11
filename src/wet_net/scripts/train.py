@@ -17,9 +17,6 @@ def train(
     optimize_for: str = typer.Option("recall", help="Optimization target: recall or false_alarm."),
     mock: bool = typer.Option(False, "--mock", help="Use mock dataset (requires pre_process --mock)."),
     data_path: str | None = typer.Option(None, help="Preprocessed parquet path; defaults to processed output."),
-    data_dir: str = typer.Option(
-        "./data", help="(legacy) data directory; used to locate preprocessed parquet if provided."
-    ),
     local_model_path: str | None = typer.Option(None, help="Optional path to copy wetnet.pt after training."),
     dry_run: bool = typer.Option(False, help="Show what would happen without training."),
     push_to_hub: bool = typer.Option(False, help="Upload artifacts to Hugging Face after training."),
@@ -105,38 +102,53 @@ def train(
         typer.secho("early_stop_metric must be one of: total, cls", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
+    if upload_only and dry_run:
+        typer.secho(
+            f"[dry-run] Would upload existing artifacts to Hugging Face hub_model_name={hub_model_name}.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+
     if not upload_only:
         # Locate preprocessed parquet only when training is needed.
-        candidates = []
+        # If data_path is explicitly provided, it must exist (no fallback).
         if data_path:
-            candidates.append(Path(data_path))
-        if mock:
-            from wet_net.data.preprocess import DATA_DIR
-            candidates.append(DATA_DIR / "processed" / "mock_preprocessed.parquet")
-            candidates.append(Path(data_dir) / "processed" / "mock_preprocessed.parquet")
+            data_path_obj = Path(data_path)
+            if not data_path_obj.exists():
+                typer.secho(
+                    f"Preprocessed parquet not found at {data_path_obj}. "
+                    f"Run `wet-net pre-process {'--mock' if mock else '--data-url <url>'}` first.",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(code=1)
+            preprocessed = data_path_obj
         else:
-            from wet_net.data.preprocess import PROCESSED_PARQUET
-            candidates.append(PROCESSED_PARQUET)
-            candidates.append(Path(data_dir) / "processed" / "anomalous_consumption_preprocessed.parquet")
-        preprocessed = next((c for c in candidates if c and c.exists()), None)
-        if preprocessed is None and not dry_run:
-            msg = (
-                "Mock preprocessed parquet not found. Run `wet-net pre-process --mock` first."
-                if mock
-                else "Preprocessed parquet not found. Run `wet-net pre-process --data-url <url>` first."
-            )
-            typer.secho(msg, fg=typer.colors.RED)
-            raise typer.Exit(code=1)
-        preprocessed = Path(preprocessed) if preprocessed else Path("dry-run-placeholder")
+            # Fallback to default locations if data_path not provided
+            if mock:
+                from wet_net.data.preprocess import DATA_DIR
+
+                preprocessed = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+            else:
+                from wet_net.data.preprocess import PROCESSED_PARQUET
+
+                preprocessed = PROCESSED_PARQUET
+            if not preprocessed.exists() and not dry_run:
+                msg = (
+                    "Mock preprocessed parquet not found. Run `wet-net pre-process --mock` first."
+                    if mock
+                    else "Preprocessed parquet not found. Run `wet-net pre-process --data-url <url>` first."
+                )
+                typer.secho(msg, fg=typer.colors.RED)
+                raise typer.Exit(code=1)
+            if not preprocessed.exists():
+                preprocessed = Path("dry-run-placeholder")
 
         if dry_run:
             typer.secho(
                 f"[dry-run] Would train seq_len={seq_len}, optimize_for={optimize_for}, "
-                f"mock={mock}, preprocessed={preprocessed}",
+                f"mock={mock}, preprocessed={preprocessed}, hub_model_name={hub_model_name}",
                 fg=typer.colors.YELLOW,
             )
-            if upload_only:
-                typer.secho("[dry-run] Would upload existing artifacts to Hugging Face.", fg=typer.colors.YELLOW)
             raise typer.Exit(code=0)
 
         artifacts = train_wetnet(
@@ -171,21 +183,34 @@ def train(
         }
 
     if upload_to_hub:
-        api = HfApi()
-        repo_id = hub_model_name
-        typer.secho(f"Pushing artifacts to Hugging Face repo {repo_id} ...", fg=typer.colors.YELLOW)
-        api.create_repo(repo_id=repo_id, exist_ok=True)
-        run_prefix = f"seq{seq_len}_{optimize_for}{suffix}"
-        keys_to_push = ["model"] if push_model_only else ["model", "vib", "config", "metrics", "augmented_metrics"]
-        for key in keys_to_push:
-            path = artifacts.get(key)
-            if path and Path(path).exists():
-                api.upload_file(
-                    path_or_fileobj=path,
-                    path_in_repo=str(Path(run_prefix) / Path(path).name),
-                    repo_id=repo_id,
-                )
-        typer.secho("Push complete.", fg=typer.colors.GREEN)
+        push_artifacts_to_hub(
+            artifacts=artifacts,
+            hub_model_name=hub_model_name,
+            run_prefix=f"seq{seq_len}_{optimize_for}{suffix}",
+            push_model_only=push_model_only,
+        )
+
+
+def push_artifacts_to_hub(
+    artifacts: dict[str, Path],
+    hub_model_name: str,
+    run_prefix: str,
+    push_model_only: bool,
+) -> None:
+    api = HfApi()
+    repo_id = hub_model_name
+    typer.secho(f"Pushing artifacts to Hugging Face repo {repo_id} ...", fg=typer.colors.YELLOW)
+    api.create_repo(repo_id=repo_id, exist_ok=True)
+    keys_to_push = ["model"] if push_model_only else ["model", "vib", "config", "metrics", "augmented_metrics"]
+    for key in keys_to_push:
+        path = artifacts.get(key)
+        if path and Path(path).exists():
+            api.upload_file(
+                path_or_fileobj=path,
+                path_in_repo=str(Path(run_prefix) / Path(path).name),
+                repo_id=repo_id,
+            )
+    typer.secho("Push complete.", fg=typer.colors.GREEN)
 
 
 if __name__ == "__main__":

@@ -6,12 +6,6 @@ from wet_net.scripts.wet_net import app
 runner = CliRunner()
 
 
-@pytest.fixture(scope="session")
-def data_dir(tmp_path_factory):
-    data_dir = tmp_path_factory.mktemp("data")
-    return data_dir
-
-
 class TestPreProcessCLI:
     def test_pre_process_mock(self):
         result = runner.invoke(app, ["pre-process", "--mock"])
@@ -33,11 +27,37 @@ class TestTrainCLI:
         assert "[dry-run] Would train" in result.stdout
         assert "mock=True" in result.stdout
 
-    def test_train_mock_dry_run_with_custom_data_dir(self):
-        result = runner.invoke(app, ["train", "--mock", "--dry-run", "--data-path", "custom/data"])
+    def test_train_mock_dry_run_with_custom_data_path(self, tmp_path_factory):
+        tmp_path = tmp_path_factory.mktemp("data")
+        data_file = tmp_path / "custom_data.parquet"
+        data_file.write_bytes(b"mock parquet data")
+
+        result = runner.invoke(app, ["train", "--mock", "--dry-run", "--data-path", str(data_file)])
         assert result.exit_code == 0
         assert "[dry-run] Would train" in result.stdout
         assert "mock=True" in result.stdout
+        assert str(data_file) in result.stdout
+
+    def test_train_mock_dry_run_with_nonexistent_data_path_fails(self):
+        # When data_path is provided and doesn't exist, should fail (non-dry-run)
+        result = runner.invoke(app, ["train", "--mock", "--dry-run", "--data-path", "./nonexistent/data.parquet"])
+        assert result.exit_code == 1
+        assert "not found at" in result.stdout or "not found" in result.stderr
+
+    def test_train_mock_fallback_to_default(self):
+        """Test that fallback to default location works when data_path is not provided."""
+        # Should work in dry-run even if default location doesn't exist
+        result = runner.invoke(app, ["train", "--mock", "--dry-run"])
+        assert result.exit_code == 0
+        assert "[dry-run] Would train" in result.stdout
+        assert "mock=True" in result.stdout
+
+    def test_train_non_mock_fallback_to_default(self):
+        """Test fallback to default location for non-mock data."""
+        # Should work in dry-run even if default location doesn't exist
+        result = runner.invoke(app, ["train", "--dry-run"])
+        assert result.exit_code == 0
+        assert "[dry-run] Would train" in result.stdout
 
     def test_train_mock_dry_run_with_custom_model_path(self):
         result = runner.invoke(app, ["train", "--mock", "--dry-run", "--local-model-path", "./custom_models/model.pt"])
@@ -125,3 +145,22 @@ class TestTrainCLI:
         assert result.exit_code in (0, 1)
         if result.exit_code == 0:
             assert "[dry-run] Would upload existing artifacts" in result.stdout
+
+
+class TestEvaluateCLI:
+    def test_evaluate_with_nonexistent_data_path_fails(self):
+        # When data_path is provided and doesn't exist, should fail
+        result = runner.invoke(
+            app,
+            ["evaluate", "--seq-len", "96", "--optimize-for", "recall", "--data-path", "./nonexistent/data.parquet"],
+        )
+        assert result.exit_code == 1
+        assert "not found at" in result.stdout or "not found" in result.stderr
+
+    def test_evaluate_fallback_to_default(self):
+        """Test that fallback to default location works when data_path is not provided."""
+        # Should fail if default location doesn't exist (non-dry-run)
+        result = runner.invoke(app, ["evaluate", "--seq-len", "96", "--optimize-for", "recall"])
+        # Will fail because default processed parquet doesn't exist, but should fail gracefully
+        assert result.exit_code == 1
+        assert "not found at" in result.stdout or "not found" in result.stderr
