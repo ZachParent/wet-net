@@ -112,8 +112,11 @@ source .env && uv run wet-net train --seq-len 96 --optimize-for recall --push-to
 # Optional: override hyperparameters by editing src/wet_net/config/best_configs.yaml
 # (any fields you change there are picked up automatically at runtime)
 
-# Evaluate saved checkpoints (no retraining)
+# Evaluate pre-trained models (automatically loaded from HuggingFace)
 uv run wet-net evaluate --seq-len 192 --optimize-for recall
+
+# Evaluate with custom local checkpoints
+uv run wet-net evaluate --seq-len 192 --optimize-for recall --local
 ```
 
 ### Development and Testing
@@ -159,6 +162,28 @@ uv run wet-net train --seq-len 192 --optimize-for recall \
   --recon-weight 0.3 --forecast-weight 0.5 --short-weight 2 --long-weight 2
 ```
 
+### Model Repository
+
+All pre-trained WetNet models are hosted in the official HuggingFace repository:
+
+**🤗 [https://huggingface.co/WetNet/wet-net](https://huggingface.co/WetNet/wet-net)**
+
+The repository contains trained models for all sequence lengths (48, 96, 192, 360, 720, 1440) optimized for both objectives (recall, false_alarm). By default, the `wet-net evaluate` command automatically downloads and loads the appropriate model from this repository.
+
+#### Available Models
+- **Sequence Lengths**: 48, 96, 192, 360, 720, 1440
+- **Optimization Objectives**: `recall` (maximize anomaly detection), `false_alarm` (minimize false positives)
+- **Model Files**: `wetnet.pt` (main model), `vib.pt` (uncertainty probe), `config.json` (hyperparameters)
+
+#### Evaluation Modes
+```bash
+# Default: Automatically load pre-trained model from HuggingFace
+uv run wet-net evaluate --seq-len 192 --optimize-for recall
+
+# Force use of local checkpoints (if available)
+uv run wet-net evaluate --seq-len 192 --optimize-for recall --local
+```
+
 ### HuggingFace Token Management
 
 The `hf-check` command helps you verify your HuggingFace authentication and repository access:
@@ -172,7 +197,7 @@ uv run wet-net hf-check WetNet/wet-net --env-var CUSTOM_HF_TOKEN
 
 # The command displays:
 # - Token authentication status
-# - User and organization information  
+# - User and organization information
 # - Repository visibility (public/private)
 # - Inferred read/write permissions
 ```
