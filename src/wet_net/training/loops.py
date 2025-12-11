@@ -32,9 +32,7 @@ def pcgrad_step(model: torch.nn.Module, objectives: list[torch.Tensor], scale: f
             if dot < 0:
                 norm_sq = sum((g_j**2).sum() for g_j in projected[j]) + 1e-12
                 coeff = dot / norm_sq
-                projected[i] = [
-                    g_i - coeff * g_j for g_i, g_j in zip(projected[i], projected[j], strict=False)
-                ]
+                projected[i] = [g_i - coeff * g_j for g_i, g_j in zip(projected[i], projected[j], strict=False)]
     for idx, (p, grad_components) in enumerate(zip(params, zip(*projected, strict=False), strict=False)):
         total_grad = torch.zeros_like(p)
         for g in grad_components:
@@ -284,16 +282,17 @@ def train_staged_model(
                     for key in ("reconstruction", "forecast", "short", "long"):
                         lk = f"loss_{key}"
                         if lk in metrics:
-                            parts.append(f"{key[:5]}={metrics[lk]:.4f}(w={current_weights.get(key,1.0):.2f})")
+                            parts.append(f"{key[:5]}={metrics[lk]:.4f}(w={current_weights.get(key, 1.0):.2f})")
                         else:
-                            parts.append(f"{key[:5]}=-- (w={current_weights.get(key,1.0):.2f})")
+                            parts.append(f"{key[:5]}=-- (w={current_weights.get(key, 1.0):.2f})")
                     if "recall_short" in metrics:
                         parts.append(f"rS={metrics['recall_short']:.3f}")
                     if "recall_long" in metrics:
                         parts.append(f"rL={metrics['recall_long']:.3f}")
                     return " ".join(parts)
+
                 msg = (
-                    f"[stage {stage['name']}] ep {epoch+1}/{stage['epochs']} "
+                    f"[stage {stage['name']}] ep {epoch + 1}/{stage['epochs']} "
                     f"train_tot={train_metrics['loss_total']:.4f} [{comp_str(train_metrics, weights)}] "
                     f"val_tot={val_metrics['loss_total']:.4f} [{comp_str(val_metrics, weights)}]"
                 )
@@ -317,7 +316,7 @@ def train_staged_model(
                     wait += 1
                     if early_stop and patience and wait >= patience:
                         console.log(
-                            f"[stage {stage['name']}] early stopping after {epoch+1} epochs "
+                            f"[stage {stage['name']}] early stopping after {epoch + 1} epochs "
                             f"(no val improvement for {patience} epochs; best={best_val:.4f})."
                         )
                         break

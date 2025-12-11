@@ -1,6 +1,7 @@
 """
 Reusable attention blocks with continuous RoPE (from the original notebook).
 """
+
 from __future__ import annotations
 
 import math

@@ -1,6 +1,7 @@
 """
 Central config for the WetNet tri-task pipeline.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, replace

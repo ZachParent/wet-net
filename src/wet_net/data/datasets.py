@@ -1,6 +1,7 @@
 """
 Dataset helpers for WetNet.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -207,9 +208,7 @@ def build_policy_split(meta_df: pd.DataFrame, ratios: tuple[float, float, float]
             continue
         train_end = max(1, min(int(np.floor(n * train_ratio)), n - 2)) if n > 2 else max(1, n - 2)
         val_end = (
-            max(train_end + 1, min(int(np.floor(n * (train_ratio + val_ratio))), n - 1))
-            if n > 2
-            else train_end + 1
+            max(train_end + 1, min(int(np.floor(n * (train_ratio + val_ratio))), n - 1)) if n > 2 else train_end + 1
         )
         splits["train"].extend(ordered[:train_end].tolist())
         splits["val"].extend(ordered[train_end:val_end].tolist())

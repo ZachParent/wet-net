@@ -17,6 +17,7 @@ Typical usage:
     $ wet-net hf-check WetNet/wet-net
     $ wet-net hf-check WetNet/wet-net --env-var MY_HF_TOKEN
 """
+
 import argparse
 import os
 import sys
@@ -85,7 +86,7 @@ def hf_check(
     # Validate that a token was found; exit early if not
     if token is None:
         checked = [env_var] if env_var else ["HF_TOKEN", "HUGGINGFACE_HUB_TOKEN"]
-        checked_names = ', '.join(n for n in checked if n)
+        checked_names = ", ".join(n for n in checked if n)
         typer.secho(f"❌ No HF token found. Checked env vars: {checked_names}", fg=typer.colors.RED)
         raise typer.Exit(code=1)
 
