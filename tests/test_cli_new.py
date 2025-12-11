@@ -3,7 +3,9 @@ from pathlib import Path
 
 
 def run_cli(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    # Using subprocess.run with explicit shell=False for security
+    # All commands are hardcoded and trusted in test context
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, shell=False)  # noqa: S603
 
 
 def test_pre_process_mock():

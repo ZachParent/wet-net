@@ -15,7 +15,9 @@ def test_train_dry_run_mock():
         "--mock",
         "--dry-run",
     ]
-    result = subprocess.run(cmd, cwd=Path(__file__).resolve().parents[1], capture_output=True)
+    # Using subprocess.run with explicit shell=False for security
+    # All commands are hardcoded and trusted in test context
+    result = subprocess.run(cmd, cwd=Path(__file__).resolve().parents[1], capture_output=True, shell=False)  # noqa: S603
     assert result.returncode == 0, result.stderr.decode()
 
 
@@ -32,6 +34,8 @@ def test_train_upload_only_no_artifacts():
         "--upload-only",
         "--push-to-hub",
     ]
-    result = subprocess.run(cmd, cwd=Path(__file__).resolve().parents[1], capture_output=True)
+    # Using subprocess.run with explicit shell=False for security
+    # All commands are hardcoded and trusted in test context
+    result = subprocess.run(cmd, cwd=Path(__file__).resolve().parents[1], capture_output=True, shell=False)  # noqa: S603
     # upload-only without artifacts may fail; we just assert it doesn't crash due to argument parsing
     assert result.returncode == 0 or result.returncode == 1
