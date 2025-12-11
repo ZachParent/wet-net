@@ -21,13 +21,10 @@ dependencies = [
     "numpy>=2.3.3",
     "pandas>=2.3.2",
     "plotly>=6.4.0",
+    "torch>=2.9.1",
     "pyarrow>=22.0.0",
-    "requests>=2.32.5",
+    "requests>=2.28.1",
     "safetensors>=0.7.0",
-    "torch>=2.9.1; sys_platform == 'darwin'",
-    "torch>=2.9.1; sys_platform != 'darwin'",
-    "torchvision>=0.24.1; sys_platform == 'darwin'",
-    "torchvision>=0.24.1; sys_platform != 'darwin'",
     "typer>=0.19.2",
     "umap-learn>=0.5.7",
     "rich>=13.9.2",
@@ -48,14 +45,60 @@ dev = [
     "streamlit>=1.50.0",
 ]
 
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
+[project.optional-dependencies]
+cpu = [
+  "torch",
+]
+gpu = [
+  "torch",
+]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "gpu" }
+    ]
+]
+# The required-environments setting ensures that a resolution is possible for 
+# each of these specific environment markers. This is critical for packages
+# like PyTorch which have complex binary dependencies (wheels).
+required-environments = [
+    # 1. macOS (only arm64 is supported, and the default index is used)
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+
+    # 2. Linux (Need to ensure default, CPU and GPU/CUDA versions are resolvable)
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and extra != 'gpu' and extra != 'cpu'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and extra != 'gpu' and extra == 'cpu'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and extra != 'cpu' and extra == 'gpu'",
+
+    # 3. Windows (Need to ensure default, CPU and GPU/CUDA versions are resolvable)
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and extra != 'gpu' and extra != 'cpu'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and extra != 'gpu' and extra == 'cpu'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64' and extra != 'cpu' and extra == 'gpu'",
+]
 
 [tool.uv.sources]
-# Use cuda 12.8 on non-macOS systems
-torch = { index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }
+torch = [
+  { index = "torch-cpu", extra = "cpu", marker = "sys_platform != 'darwin'" },
+  { index = "torch-gpu", extra = "gpu", marker = "sys_platform != 'darwin'" },
+  { index = "pypi", marker = "sys_platform == 'darwin'" },
+]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-gpu"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [project.scripts]
 wet-net = "wet_net.scripts.wet_net:app"
