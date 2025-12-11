@@ -209,16 +209,8 @@ class TestEvaluateCLI:
         assert result.exit_code == 1
         assert "not found at" in result.stdout or "not found" in result.stderr
 
-    def test_evaluate_fallback_to_default(self):
-        """Test that fallback to default location works when data_path is not provided."""
-        # Should fail if default location doesn't exist (non-dry-run)
-        result = runner.invoke(app, ["evaluate", "--seq-len", "96", "--optimize-for", "recall"])
-        # Will fail because default processed parquet doesn't exist, but should fail gracefully
-        assert result.exit_code == 1
-        assert "not found at" in result.stdout or "not found" in result.stderr
-
     def test_evaluate_mock_end_to_end(self, tmp_path_factory):
-        """Test full evaluation pipeline with mock data."""
+        """Test full evaluation pipeline with mock data using default behavior."""
         # First ensure mock data exists
         preprocess_result = runner.invoke(app, ["pre-process", "--mock"])
         assert preprocess_result.exit_code == 0
@@ -240,7 +232,7 @@ class TestEvaluateCLI:
         )
         assert train_result.exit_code == 0
 
-        # Now evaluate using the trained model
+        # Now evaluate using the trained model (default behavior - checks local training dir)
         from wet_net.data.preprocess import DATA_DIR
 
         mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
@@ -269,3 +261,165 @@ class TestEvaluateCLI:
         assert (report_dir / "metrics.csv").exists()
         assert (report_dir / "augmented_metrics.csv").exists()
         assert (report_dir / "threshold_sweep.csv").exists()
+
+    def test_evaluate_with_local_artifacts_path_success(self, tmp_path_factory):
+        """Test evaluation with --local-artifacts-path pointing to existing artifacts."""
+        # First ensure mock data exists
+        preprocess_result = runner.invoke(app, ["pre-process", "--mock"])
+        assert preprocess_result.exit_code == 0
+
+        # Train a model first (with fast mode)
+        train_result = runner.invoke(
+            app,
+            [
+                "train",
+                "--seq-len",
+                "96",
+                "--optimize-for",
+                "recall",
+                "--mock",
+                "--fast",
+                "--max-epochs",
+                "1",
+            ],
+        )
+        assert train_result.exit_code == 0
+
+        # Get the path to the trained artifacts
+        from wet_net.data.preprocess import DATA_DIR
+        from wet_net.paths import RESULTS_DIR
+
+        artifacts_dir = RESULTS_DIR / "wetnet" / "seq96_recall_fast"
+        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+
+        # Evaluate using --local-artifacts-path
+        result = runner.invoke(
+            app,
+            [
+                "evaluate",
+                "--seq-len",
+                "96",
+                "--optimize-for",
+                "recall",
+                "--data-path",
+                str(mock_data_path),
+                "--local-artifacts-path",
+                str(artifacts_dir),
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Report written to" in result.stdout
+
+        # Verify report artifacts were created
+        report_dir = RESULTS_DIR / "wetnet" / "report" / "seq96_recall"
+        assert (report_dir / "report.md").exists()
+        assert (report_dir / "metrics.csv").exists()
+
+    def test_evaluate_with_local_artifacts_path_fails_nonexistent(self):
+        """Test that --local-artifacts-path fails when path doesn't exist."""
+        from wet_net.data.preprocess import DATA_DIR
+
+        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        # Ensure mock data exists
+        if not mock_data_path.exists():
+            runner.invoke(app, ["pre-process", "--mock"])
+
+        result = runner.invoke(
+            app,
+            [
+                "evaluate",
+                "--seq-len",
+                "96",
+                "--optimize-for",
+                "recall",
+                "--data-path",
+                str(mock_data_path),
+                "--local-artifacts-path",
+                "/nonexistent/path/to/artifacts",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "does not exist" in result.stdout or "does not exist" in result.stderr
+
+    def test_evaluate_with_local_artifacts_path_fails_missing_artifacts(self, tmp_path_factory):
+        """Test that --local-artifacts-path fails when required artifacts are missing."""
+        from wet_net.data.preprocess import DATA_DIR
+
+        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        # Ensure mock data exists
+        if not mock_data_path.exists():
+            runner.invoke(app, ["pre-process", "--mock"])
+
+        # Create a temporary directory that exists but doesn't have the required artifacts
+        tmp_dir = tmp_path_factory.mktemp("empty_artifacts")
+        result = runner.invoke(
+            app,
+            [
+                "evaluate",
+                "--seq-len",
+                "96",
+                "--optimize-for",
+                "recall",
+                "--data-path",
+                str(mock_data_path),
+                "--local-artifacts-path",
+                str(tmp_dir),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "missing" in result.stdout.lower() or "missing" in result.stderr.lower()
+
+    def test_evaluate_with_hub_model_name_fails_nonexistent(self):
+        """Test that --hub-model-name fails when repo doesn't exist."""
+        from wet_net.data.preprocess import DATA_DIR
+
+        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        # Ensure mock data exists
+        if not mock_data_path.exists():
+            runner.invoke(app, ["pre-process", "--mock"])
+
+        result = runner.invoke(
+            app,
+            [
+                "evaluate",
+                "--seq-len",
+                "96",
+                "--optimize-for",
+                "recall",
+                "--data-path",
+                str(mock_data_path),
+                "--hub-model-name",
+                "nonexistent-org/nonexistent-model-12345",
+            ],
+        )
+        assert result.exit_code == 1
+        # Should fail with repository not found error
+        assert "404" in result.stdout or "not found" in result.stdout.lower() or "not found" in result.stderr.lower()
+
+    def test_evaluate_with_both_local_and_hub_fails(self):
+        """Test that specifying both --local-artifacts-path and --hub-model-name fails."""
+        from wet_net.data.preprocess import DATA_DIR
+
+        mock_data_path = DATA_DIR / "processed" / "mock_preprocessed.parquet"
+        # Ensure mock data exists
+        if not mock_data_path.exists():
+            runner.invoke(app, ["pre-process", "--mock"])
+
+        result = runner.invoke(
+            app,
+            [
+                "evaluate",
+                "--seq-len",
+                "96",
+                "--optimize-for",
+                "recall",
+                "--data-path",
+                str(mock_data_path),
+                "--local-artifacts-path",
+                "/some/path",
+                "--hub-model-name",
+                "some-org/some-model",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "both" in result.stdout.lower() or "both" in result.stderr.lower()

@@ -27,6 +27,7 @@ import seaborn as sns
 import torch
 import typer
 from huggingface_hub import snapshot_download
+from huggingface_hub.utils import RepositoryNotFoundError
 
 from wet_net.config.tri_task import HORIZONS, METRIC_THRESHOLDS, SEQ_LENGTHS, get_best_config
 from wet_net.data.datasets import (
@@ -60,34 +61,134 @@ app = typer.Typer()
 # --------------------------------------------------------------------------- #
 
 
-def ensure_artifacts(repo_id: str, run_id: str, out_dir: Path) -> dict[str, Path]:
+def ensure_artifacts(
+    run_id: str,
+    out_dir: Path,
+    local_artifacts_path: Path | None = None,
+    hub_model_name: str | None = None,
+) -> dict[str, Path]:
     """
-    Ensure artifacts exist locally; download from HF if missing.
+    Ensure artifacts exist locally.
+
+    Priority order:
+    1. If local_artifacts_path is provided, use it (fail if missing)
+    2. If hub_model_name is provided, download from HuggingFace Hub (fail if missing)
+    3. Otherwise, check local training directory, then fallback to default hub repo
     """
+    from wet_net.paths import RESULTS_DIR
+
     out_dir.mkdir(parents=True, exist_ok=True)
     expected = {
         "model": out_dir / "wetnet.pt",
         "vib": out_dir / "vib.pt",
         "config": out_dir / "config.json",
     }
+
+    # Priority 1: Use explicitly provided local artifacts path
+    if local_artifacts_path is not None:
+        local_artifacts_path_obj = Path(local_artifacts_path)
+        if not local_artifacts_path_obj.exists():
+            raise FileNotFoundError(f"Local artifacts path does not exist: {local_artifacts_path_obj}")
+
+        local_artifacts = {
+            "model": local_artifacts_path_obj / "wetnet.pt",
+            "vib": local_artifacts_path_obj / "vib.pt",
+            "config": local_artifacts_path_obj / "config.json",
+        }
+
+        # Verify all required artifacts exist
+        missing = [name for name, path in local_artifacts.items() if not path.exists()]
+        if missing:
+            raise FileNotFoundError(f"Required artifacts missing from {local_artifacts_path_obj}: {', '.join(missing)}")
+
+        # Copy artifacts to out_dir
+        for key, local_path in local_artifacts.items():
+            expected[key].write_bytes(local_path.read_bytes())
+
+        # Copy optional CSVs if present
+        for fname in ["metrics.csv", "augmented_metrics.csv"]:
+            src = local_artifacts_path_obj / fname
+            if src.exists():
+                dst = out_dir / fname
+                if not dst.exists():
+                    dst.write_bytes(src.read_bytes())
+        return expected
+
+    # Priority 2: Download from explicitly provided hub model name
+    if hub_model_name is not None:
+        snapshot_dir = Path(
+            snapshot_download(
+                hub_model_name,
+                allow_patterns=["wetnet.pt", "vib.pt", "config.json", "metrics.csv", "augmented_metrics.csv"],
+            )
+        )
+        # Look for artifacts in the run_id subdirectory
+        run_dir = snapshot_dir / run_id
+        artifact_dir = run_dir if run_dir.exists() else snapshot_dir
+
+        for _name, path in expected.items():
+            src = artifact_dir / path.name
+            if not src.exists():
+                raise FileNotFoundError(f"{path.name} not found in repo {hub_model_name} (checked {artifact_dir})")
+            path.write_bytes(src.read_bytes())
+
+        # Copy optional CSVs if present
+        for fname in ["metrics.csv", "augmented_metrics.csv"]:
+            src = artifact_dir / fname
+            if src.exists():
+                dst = out_dir / fname
+                if not dst.exists():
+                    dst.write_bytes(src.read_bytes())
+        return expected
+
+    # Priority 3: Check local training directory first, then fallback to default hub repo
+    local_training_dir = RESULTS_DIR / "wetnet" / run_id
+    local_artifacts = {
+        "model": local_training_dir / "wetnet.pt",
+        "vib": local_training_dir / "vib.pt",
+        "config": local_training_dir / "config.json",
+    }
+
+    # If all artifacts exist locally, use them (copy to out_dir for consistency)
+    if all(p.exists() for p in local_artifacts.values()):
+        # Copy artifacts to out_dir
+        for key, local_path in local_artifacts.items():
+            expected[key].write_bytes(local_path.read_bytes())
+
+        # Copy optional CSVs if present
+        for fname in ["metrics.csv", "augmented_metrics.csv"]:
+            src = local_training_dir / fname
+            if src.exists():
+                dst = out_dir / fname
+                if not dst.exists():
+                    dst.write_bytes(src.read_bytes())
+        return expected
+
+    # If not found locally, check out_dir
     if all(p.exists() for p in expected.values()):
         return expected
 
+    # Finally, try downloading from default Hugging Face repo
+    default_repo_id = "WetNet/wet-net"
     snapshot_dir = Path(
         snapshot_download(
-            repo_id,
+            default_repo_id,
             allow_patterns=["wetnet.pt", "vib.pt", "config.json", "metrics.csv", "augmented_metrics.csv"],
         )
     )
+    # Look for artifacts in the run_id subdirectory
+    run_dir = snapshot_dir / run_id
+    artifact_dir = run_dir if run_dir.exists() else snapshot_dir
+
     for _name, path in expected.items():
-        src = snapshot_dir / path.name
+        src = artifact_dir / path.name
         if not src.exists():
-            raise FileNotFoundError(f"{path.name} not found in repo {repo_id}")
+            raise FileNotFoundError(f"{path.name} not found in repo {default_repo_id} (checked {artifact_dir})")
         path.write_bytes(src.read_bytes())
 
     # Copy optional CSVs if present
     for fname in ["metrics.csv", "augmented_metrics.csv"]:
-        src = snapshot_dir / fname
+        src = artifact_dir / fname
         if src.exists():
             dst = out_dir / fname
             if not dst.exists():
@@ -198,15 +299,21 @@ def plot_forecast_example(preds: dict, df_meta: pd.DataFrame, out_dir: Path) -> 
 def generate_report(
     seq_len: int,
     optimize_for: str,
-    repo_id: str,
     data_path: Path,
     out_dir: Path,
     run_suffix: str = "",
     seed: int = 42,
+    local_artifacts_path: Path | None = None,
+    hub_model_name: str | None = None,
 ):
     set_seed(seed)
     run_id = f"seq{seq_len}_{optimize_for}{run_suffix}"
-    artifacts = ensure_artifacts(repo_id, run_id, out_dir)
+    artifacts = ensure_artifacts(
+        run_id=run_id,
+        out_dir=out_dir,
+        local_artifacts_path=local_artifacts_path,
+        hub_model_name=hub_model_name,
+    )
 
     cfg = get_best_config(seq_len, optimize_for)
     df, tri_dataset, metadata, splits, loaders, feature_cols = build_loaders(data_path, seq_len)
@@ -274,10 +381,15 @@ def generate_report(
     forecast_path = plot_forecast_example(preds, metadata.iloc[splits["test"]], out_dir)
 
     # Markdown report
+    model_source = (
+        f"Local: {local_artifacts_path}"
+        if local_artifacts_path
+        else (f"Hub: {hub_model_name}" if hub_model_name else "Hub: WetNet/wet-net (default)")
+    )
     report = [
         f"# WetNet Evaluation Report ({run_id})",
         "",
-        f"- Repo: `{repo_id}`",
+        f"- Model source: {model_source}",
         f"- Sequence length: {seq_len}",
         f"- Optimize for: {optimize_for}",
         f"- Test samples: {len(splits['test'])}",
@@ -316,17 +428,42 @@ def generate_report(
 def evaluate(
     seq_len: int = typer.Option(96, help="Sequence length used during training."),
     optimize_for: str = typer.Option("recall", help="recall or false_alarm; matches saved config."),
-    repo_id: str = typer.Option("WetNet/wet-net", help="Hugging Face repo to pull artifacts from."),
     data_path: str | None = typer.Option(None, help="Preprocessed parquet path; defaults to processed output."),
     output_dir: str = typer.Option("./results/wetnet/report", help="Where to write report/plots."),
     run_suffix: str = typer.Option("", help="Suffix used during training (e.g., _fast) to locate artifacts."),
     seed: int = typer.Option(42, help="Random seed."),
+    local_artifacts_path: str | None = typer.Option(
+        None,
+        "--local-artifacts-path",
+        help="Path to local directory containing model artifacts (wetnet.pt, vib.pt, config.json).",
+    ),
+    hub_model_name: str | None = typer.Option(
+        None,
+        "--hub-model-name",
+        help=(
+            "Hugging Face repo to pull artifacts from. "
+            "Defaults to WetNet/wet-net if neither --local-artifacts-path nor --hub-model-name is specified."
+        ),
+    ),
 ):
     """
     Run full evaluation + reporting without retraining.
+
+    Model source priority:
+    1. --local-artifacts-path (if provided, must exist)
+    2. --hub-model-name (if provided, downloads from HuggingFace Hub)
+    3. Default: checks local training directory, then falls back to WetNet/wet-net
     """
     if seq_len not in SEQ_LENGTHS:
         typer.secho(f"seq_len must be one of {SEQ_LENGTHS}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    # Validate that only one of local_artifacts_path or hub_model_name is provided
+    if local_artifacts_path is not None and hub_model_name is not None:
+        typer.secho(
+            "Cannot specify both --local-artifacts-path and --hub-model-name. Choose one.",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(code=1)
 
     # If data_path is explicitly provided, it must exist (no fallback).
@@ -351,8 +488,25 @@ def evaluate(
             )
             raise typer.Exit(code=1)
 
+    local_artifacts_path_obj = Path(local_artifacts_path) if local_artifacts_path else None
     out_dir = Path(output_dir) / f"seq{seq_len}_{optimize_for}{run_suffix}"
-    generate_report(seq_len, optimize_for, repo_id, final_data_path, out_dir, run_suffix=run_suffix, seed=seed)
+    try:
+        generate_report(
+            seq_len=seq_len,
+            optimize_for=optimize_for,
+            data_path=final_data_path,
+            out_dir=out_dir,
+            run_suffix=run_suffix,
+            seed=seed,
+            local_artifacts_path=local_artifacts_path_obj,
+            hub_model_name=hub_model_name,
+        )
+    except FileNotFoundError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(code=1) from e
+    except RepositoryNotFoundError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(code=1) from e
 
 
 if __name__ == "__main__":
