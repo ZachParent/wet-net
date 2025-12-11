@@ -209,7 +209,7 @@ def push_artifacts_to_hub(
         if path and Path(path).exists():
             api.upload_file(
                 path_or_fileobj=path,
-                path_in_repo=str(Path(run_prefix) / Path(path).name),
+                path_in_repo=f"{run_prefix}/{Path(path).name}",
                 repo_id=repo_id,
             )
     typer.secho("Push complete.", fg=typer.colors.GREEN)

@@ -118,7 +118,13 @@ def ensure_artifacts(
         snapshot_dir = Path(
             snapshot_download(
                 hub_model_name,
-                allow_patterns=["wetnet.pt", "vib.pt", "config.json", "metrics.csv", "augmented_metrics.csv"],
+                allow_patterns=[
+                    f"{run_id}/wetnet.pt",
+                    f"{run_id}/vib.pt",
+                    f"{run_id}/config.json",
+                    f"{run_id}/metrics.csv",
+                    f"{run_id}/augmented_metrics.csv",
+                ],
             )
         )
         # Look for artifacts in the run_id subdirectory
