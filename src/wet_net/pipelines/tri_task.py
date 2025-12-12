@@ -219,7 +219,7 @@ def train_wetnet(
         "epochs": 40,
         "steps_per_epoch": 80,
         "cls_weight": 2.0,
-        "beta": 7.5e-4,
+        "beta": 1e-3,  # 7.5e-4,
     }
     if vib_cfg_overrides:
         vib_base.update(vib_cfg_overrides)

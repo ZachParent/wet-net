@@ -130,11 +130,11 @@ def run_epoch(
                     total_weight += w
                     # keep per-task contribution scaled for pcgrad if enabled
                     weighted_losses.append(w * value)
-                # normalize by sum of active weights to keep loss scale comparable
-                if total_weight > 0:
-                    total = total / total_weight
-                    weighted_losses = [wl / total_weight for wl in weighted_losses]
                     sums[key] += float(value.item())
+                # normalize by sum of active weights to keep loss scale comparable
+                # if total_weight > 0:
+                #     total = total / total_weight
+                #     weighted_losses = [wl / total_weight for wl in weighted_losses]
                 # simple recall metrics for classification heads
                 targets = result["targets"]
                 if "short" in active_tasks and "short_logits" in result["outputs"]:
